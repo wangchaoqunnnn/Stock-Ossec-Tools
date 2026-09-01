@@ -45,13 +45,15 @@ function onSearch(val) {
   timer = setTimeout(() => doSearch(val), 300)
 }
 
-async function onSelect(item) {
-  const code = item.code || String(item.value).split(' ')[0]
+async function onSelect(value, option) {
+  // ant-design-vue: @select 第一参数为选中 value（字符串），第二参数为 option 记录
+  const code = (option && option.code) || String(value).split(' ')[0]
   await loadQuote(code)
 }
 
-async function onPressEnter() {
-  const kw = keyword.value.trim()
+async function onPressEnter(rawText) {
+  // show-search 模式下 v-model 只在选中时更新，需用输入框当前文本
+  const kw = (rawText || '').trim()
   if (!kw) return
   // 纯数字视为代码直接查询
   if (/^\d{6}$/.test(kw)) {
@@ -66,10 +68,22 @@ async function onPressEnter() {
   }
 }
 
+function onInputKeyDown(e) {
+  if (e && e.key === 'Enter') {
+    e.preventDefault()
+    onPressEnter(e.target && e.target.value)
+  }
+}
+
 async function loadQuote(code) {
+  const c = String(code || '').trim()
+  if (!/^\d{6}$/.test(c)) {
+    message.warning('请输入有效的 6 位股票代码')
+    return
+  }
   quoteLoading.value = true
   try {
-    const data = await fetchQuote(code)
+    const data = await fetchQuote(c)
     quote.value = data
   } catch (e) {
     quote.value = null
@@ -101,7 +115,7 @@ onMounted(() => loadQuote('600519'))
         style="width: 100%"
         @search="onSearch"
         @select="onSelect"
-        @press-enter="onPressEnter"
+        @input-key-down="onInputKeyDown"
       >
         <template #option="{ value: v, code, name, type }">
           <div class="opt-row">

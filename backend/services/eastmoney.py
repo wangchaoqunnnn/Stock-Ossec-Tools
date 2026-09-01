@@ -218,7 +218,8 @@ class EastMoneyService(object):
             name = str(row.get("shortName") or "")
             if type_name not in self._A_SHARE_TYPES or not code or not name:
                 continue
-            market = str(row.get("market") or "")
+            market = row.get("market")
+            market = str(market) if market is not None else ""
             results.append(
                 {
                     "code": code,

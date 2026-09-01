@@ -68,6 +68,8 @@ def stock_quote():
     code = request.args.get("code", "").strip()
     if not code:
         return fail("缺少 code 参数")
+    if not (code.isdigit() and len(code) == 6):
+        return fail("股票代码格式不正确，应为 6 位数字", code=400, status=400)
     try:
         data, source = service.get_quote(code)
     except Exception:  # 双数据源均失败
