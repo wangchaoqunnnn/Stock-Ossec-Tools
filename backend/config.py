@@ -37,17 +37,28 @@ INDICES = {
         {"secid": "1.000688", "name": "科创50"},
         {"secid": "0.899050", "name": "北证50"},
     ],
-    "hk": [
+    "asia": [
+        {"secid": "100.N225", "name": "日经225"},
+        {"secid": "100.KS11", "name": "韩国KOSPI"},
+        {"secid": "100.AXJO", "name": "澳洲ASX200"},
         {"secid": "100.HSI", "name": "恒生指数"},
         {"secid": "100.HSTECH", "name": "恒生科技"},
-        {"secid": "100.HSCEI", "name": "国企指数"},
+        {"secid": "100.TWSE", "name": "台湾加权"},
     ],
     "us": [
         {"secid": "100.DJIA", "name": "道琼斯"},
         {"secid": "100.NDX", "name": "纳斯达克100"},
         {"secid": "100.SPX", "name": "标普500"},
     ],
+    "futures": [
+        {"secid": "113.IF00Y", "name": "沪深300股指"},
+        {"secid": "113.IH00Y", "name": "上证50股指"},
+        {"secid": "113.IC00Y", "name": "中证500股指"},
+        {"secid": "113.IM00Y", "name": "中证1000股指"},
+        {"secid": "113.AU00Y", "name": "黄金期货"},
+        {"secid": "113.SC00Y", "name": "原油期货"},
+    ],
 }
 
 # 市场切换文案
-MARKET_LABELS = {"cn": "A股", "hk": "港股", "us": "美股"}
+MARKET_LABELS = {"cn": "A股", "asia": "亚太", "us": "美股", "futures": "期货"}

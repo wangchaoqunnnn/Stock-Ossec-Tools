@@ -80,6 +80,21 @@ def stock_quote():
     return ok(data)
 
 
+@app.route("/api/stock/batch")
+def stock_batch():
+    codes = request.args.get("codes", "").strip()
+    if not codes:
+        return ok([])
+    code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    if len(code_list) > 50:
+        return fail("单次最多查询 50 只股票", code=400, status=400)
+    for c in code_list:
+        if not (c.isdigit() and len(c) == 6):
+            return fail("股票代码格式不正确：%s" % c, code=400, status=400)
+    data = service.get_batch_quotes(code_list)
+    return ok(data)
+
+
 # ----------------------------------------------------------------------
 # 生产模式：托管前端构建产物
 # ----------------------------------------------------------------------

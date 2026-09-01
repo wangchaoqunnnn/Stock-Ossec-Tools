@@ -21,3 +21,5 @@ export const fetchIndices = (market = 'cn') => request('/indices', { market })
 export const searchStocks = (keyword, count = 8) => request('/stock/search', { keyword, count })
 
 export const fetchQuote = (code) => request('/stock/quote', { code })
+
+export const fetchBatchQuotes = (codes) => request('/stock/batch', { codes: codes.join(',') })

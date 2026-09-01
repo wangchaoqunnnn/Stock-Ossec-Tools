@@ -181,7 +181,7 @@ class EastMoneyService(object):
     # ------------------------------------------------------------------
     # 股票检索
     # ------------------------------------------------------------------
-    _A_SHARE_TYPES = {"沪A", "深A", "京A"}
+    _A_SHARE_TYPES = {"沪A", "深A", "京A", "科创板", "创业板"}
 
     def search(self, keyword, count=8):
         """按代码/名称关键词检索 A 股。"""
@@ -444,6 +444,116 @@ class EastMoneyService(object):
                     "now": base["now"],
                     "change": base["change"],
                     "change_pct": base["change_pct"],
+                }
+            )
+        return result
+
+    # ------------------------------------------------------------------
+    # 批量行情（关注清单用）
+    # ------------------------------------------------------------------
+    def get_batch_quotes(self, codes):
+        """批量获取 A 股行情（东财 ulist 接口，失败时回退腾讯批量）。
+
+        返回 ``list``，每个元素为规范化行情 dict。
+        """
+        codes = [str(c).strip() for c in codes if c]
+        if not codes:
+            return []
+        key = "batch:%s" % ",".join(sorted(codes))
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        result = self._batch_eastmoney(codes)
+        if not result:
+            result = self._batch_tencent(codes)
+
+        self._cache.set(key, result)
+        return result
+
+    def _batch_eastmoney(self, codes):
+        secids = ",".join(self._code_to_secid(c) for c in codes)
+        try:
+            payload = _get(
+                config.EASTMONEY_ULIST_API,
+                {"secids": secids, "fields": config.ULIST_FIELDS, "fltt": "2", "invt": "2"},
+            )
+        except DataSourceError:
+            return []
+
+        diff = ((payload or {}).get("data") or {}).get("diff") or []
+        if not isinstance(diff, list):
+            diff = [diff]
+
+        by_code = {}
+        for row in diff:
+            code = str(row.get("f12") or "")
+            if code:
+                by_code[code] = row
+
+        result = []
+        for code in codes:
+            row = by_code.get(code, {})
+            result.append(
+                {
+                    "code": code,
+                    "name": str(row.get("f14") or ""),
+                    "now_price": _num(row.get("f2")),
+                    "change_pct": _num(row.get("f3")),
+                    "change": _num(row.get("f4")),
+                    "volume": _num(row.get("f5")),
+                    "amount": _num(row.get("f6")),
+                    "turnover": _num(row.get("f8")),
+                    "pe": _num(row.get("f9")),
+                    "volume_ratio": _num(row.get("f10")),
+                    "high": _num(row.get("f15")),
+                    "low": _num(row.get("f16")),
+                    "open": _num(row.get("f17")),
+                    "prev_close": _num(row.get("f18")),
+                    "total_mv": _num(row.get("f20")),
+                    "float_mv": _num(row.get("f21")),
+                    "speed": _num(row.get("f22")),
+                    "pb": _num(row.get("f23")),
+                    "industry": str(row.get("f100") or ""),
+                }
+            )
+        return result
+
+    def _batch_tencent(self, codes):
+        tcodes = [self._code_to_tencent(c) for c in codes]
+        try:
+            rows = self._tencent_fetch(tcodes)
+        except DataSourceError:
+            return []
+
+        result = []
+        for code, tcode in zip(codes, tcodes):
+            fields = rows.get(tcode)
+            if not fields:
+                result.append({"code": code, "name": "", "now_price": None})
+                continue
+            base = self._tencent_row(fields)
+            result.append(
+                {
+                    "code": code,
+                    "name": self._clean_name(fields[1]) if len(fields) > 1 else "",
+                    "now_price": base["now_price"],
+                    "change_pct": base["change_pct"],
+                    "change": base["change"],
+                    "volume": base["volume"],
+                    "amount": base["amount"],
+                    "turnover": base["turnover"],
+                    "pe": base["pe"],
+                    "volume_ratio": base["volume_ratio"],
+                    "high": base["high"],
+                    "low": base["low"],
+                    "open": base["open"],
+                    "prev_close": base["prev_close"],
+                    "total_mv": base["total_mv"],
+                    "float_mv": base["float_mv"],
+                    "speed": None,
+                    "pb": base["pb"],
+                    "industry": "",
                 }
             )
         return result
