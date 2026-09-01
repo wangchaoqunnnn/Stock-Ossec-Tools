@@ -1,0 +1,18 @@
+[
+  {"code": "600519", "name": "贵州茅台", "industry": "白酒"},
+  {"code": "300750", "name": "宁德时代", "industry": "电池"},
+  {"code": "601318", "name": "中国平安", "industry": "保险"},
+  {"code": "600036", "name": "招商银行", "industry": "银行"},
+  {"code": "000858", "name": "五粮液", "industry": "白酒"},
+  {"code": "002594", "name": "比亚迪", "industry": "汽车整车"},
+  {"code": "600276", "name": "恒瑞医药", "industry": "化学制药"},
+  {"code": "601899", "name": "紫金矿业", "industry": "贵金属"},
+  {"code": "600030", "name": "中信证券", "industry": "证券"},
+  {"code": "601012", "name": "隆基绿能", "industry": "光伏设备"},
+  {"code": "002415", "name": "海康威视", "industry": "计算机设备"},
+  {"code": "688981", "name": "中芯国际", "industry": "半导体"},
+  {"code": "600000", "name": "浦发银行", "industry": "银行"},
+  {"code": "000001", "name": "平安银行", "industry": "银行"},
+  {"code": "601888", "name": "中国中免", "industry": "旅游零售"},
+  {"code": "300059", "name": "东方财富", "industry": "互联网金融"}
+]

@@ -1,0 +1,152 @@
+/* 全局样式：暗色终端风格，参考 stock.ossec.cn/tools */
+
+:root {
+  --bg: #12121c;
+  --bg-soft: #1b1b2b;
+  --panel: #1e1e2f;
+  --panel-2: #24243a;
+  --border: #2e2e46;
+  --text: #e6e6f0;
+  --text-2: #9a9ab4;
+  --text-3: #6f6f8a;
+  --accent: #4f7cff;
+  --up: #ff4d5e;
+  --down: #00c58e;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* 涨跌颜色 */
+.up {
+  color: var(--up) !important;
+}
+.down {
+  color: var(--down) !important;
+}
+.flat {
+  color: var(--text-2) !important;
+}
+
+/* 终端风格卡片 */
+.terminal-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.terminal-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.terminal-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.terminal-card-title::before {
+  content: '';
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* 数字等宽，避免跳动 */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+/* 页面骨架 */
+.page-tools {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.page-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.page-sub {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+/* Ant 暗色细节覆盖 */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-pagination-item,
+.ant-pagination-item-link {
+  background-color: var(--panel-2) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+.ant-pagination-item-active {
+  border-color: var(--accent) !important;
+}
+
+.ant-pagination-item-active a {
+  color: var(--accent) !important;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #34344e;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (max-width: 768px) {
+  .page-tools {
+    padding: 16px 12px 32px;
+  }
+  .page-title {
+    font-size: 17px;
+  }
+}
