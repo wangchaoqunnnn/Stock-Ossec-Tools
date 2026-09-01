@@ -17,7 +17,7 @@ onMounted(() => {
     <header class="page-head">
       <div>
         <h1 class="page-title">股票数据查询工具</h1>
-        <div class="page-sub">个股查询 · 主要指数 · 关注清单 —— 免登录 · 免费 · 纯只读展示</div>
+        <div class="page-sub">个股查询 · 主要指数 —— 免登录 · 免费 · 纯只读展示</div>
       </div>
       <div class="num page-sub">{{ now }}</div>
     </header>

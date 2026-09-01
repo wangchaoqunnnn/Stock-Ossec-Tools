@@ -21,6 +21,3 @@ export const fetchIndices = (market = 'cn') => request('/indices', { market })
 export const searchStocks = (keyword, count = 8) => request('/stock/search', { keyword, count })
 
 export const fetchQuote = (code) => request('/stock/quote', { code })
-
-export const fetchWatchList = (params = {}) =>
-  request('/watch/list', { sort: params.sort, order: params.order, page: params.page, page_size: params.pageSize })
