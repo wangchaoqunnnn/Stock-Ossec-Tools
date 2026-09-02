@@ -16,6 +16,7 @@ from flask_cors import CORS
 
 from services.eastmoney import EastMoneyService
 from services.rankings import RankingsService
+from services.kline import KlineService
 
 try:  # python -m backend.app（项目根目录运行）
     from backend import config
@@ -30,6 +31,7 @@ logger = logging.getLogger("stock-ossec-tools")
 
 service = EastMoneyService()
 rankings = RankingsService()
+kline = KlineService()
 
 
 def ok(data=None, message="ok"):
@@ -132,6 +134,16 @@ def industry_flow():
     return ok(data)
 
 
+@app.route("/api/rankings/concept-flow")
+def concept_flow():
+    try:
+        limit = max(5, min(50, int(request.args.get("limit", "20"))))
+    except ValueError:
+        limit = 20
+    data = rankings.concept_flow(limit)
+    return ok(data)
+
+
 @app.route("/api/rankings/top")
 def stock_rank():
     sort = request.args.get("type", "gainers")
@@ -143,6 +155,147 @@ def stock_rank():
         limit = 20
     data = rankings.stock_rank(sort, limit)
     return ok(data)
+
+
+def _valid_code(code):
+    return code.isdigit() and len(code) == 6
+
+
+@app.route("/api/stock/kline")
+def stock_kline():
+    code = request.args.get("code", "").strip()
+    if not _valid_code(code):
+        return fail("股票代码格式不正确，应为 6 位数字", code=400, status=400)
+    period = request.args.get("period", "day")
+    try:
+        count = max(10, min(500, int(request.args.get("count", "120"))))
+    except ValueError:
+        count = 120
+    try:
+        data = kline.get_kline(code, period, count)
+    except Exception:
+        return fail("K线数据暂时不可用，请稍后重试", code=503, status=503)
+    return ok(data)
+
+
+@app.route("/api/stock/minute")
+def stock_minute():
+    code = request.args.get("code", "").strip()
+    if not _valid_code(code):
+        return fail("股票代码格式不正确，应为 6 位数字", code=400, status=400)
+    try:
+        data = kline.get_minute(code)
+    except Exception:
+        return fail("分时数据暂时不可用，请稍后重试", code=503, status=503)
+    return ok(data)
+
+
+@app.route("/api/stock/indicators")
+def stock_indicators():
+    code = request.args.get("code", "").strip()
+    if not _valid_code(code):
+        return fail("股票代码格式不正确，应为 6 位数字", code=400, status=400)
+    period = request.args.get("period", "day")
+    try:
+        data = kline.get_indicators(code, period)
+    except Exception:
+        return fail("指标数据暂时不可用，请稍后重试", code=503, status=503)
+    if data is None:
+        return fail("历史K线数据不足，暂无法计算指标", code=404, status=404)
+    return ok(data)
+
+
+# ----------------------------------------------------------------------
+# 7x24 财经新闻
+# ----------------------------------------------------------------------
+@app.route("/api/news/7x24")
+def news_7x24():
+    """7x24小时财经新闻（来自东方财富）。"""
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except ValueError:
+        page = 1
+    try:
+        page_size = max(1, min(50, int(request.args.get("page_size", "20"))))
+    except ValueError:
+        page_size = 20
+
+    try:
+        import requests as _requests
+        resp = _requests.get(
+            "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns",
+            params={
+                "client": "web",
+                "biz": "web_724",
+                "column": "350",
+                "order": "1",
+                "needInteractData": "0",
+                "page_index": page,
+                "page_size": page_size,
+            },
+            timeout=10,
+        )
+        payload = resp.json()
+    except Exception as e:
+        logging.warning("获取7x24新闻失败: %s", e)
+        return ok([])
+
+    data = (payload or {}).get("data") or {}
+    items = data.get("list") or []
+    result = []
+    for item in items:
+        result.append({
+            "title": item.get("title", ""),
+            "content": item.get("digest", "") or item.get("content", ""),
+            "source": item.get("media_name", "") or item.get("source", ""),
+            "time": item.get("showtime", "") or item.get("publish_time", ""),
+            "url": item.get("url", ""),
+        })
+    return ok(result)
+
+
+# ----------------------------------------------------------------------
+# 东财热榜
+# ----------------------------------------------------------------------
+@app.route("/api/hotlist")
+def hotlist():
+    """东方财富人气榜/飙升榜。"""
+    sort_type = request.args.get("type", "popular")  # popular: 人气榜, surge: 飙升榜
+    market = request.args.get("market", "a")  # a: A股, hk: 港股, us: 美股
+
+    try:
+        import requests as _requests
+        # 东方财富热榜接口
+        resp = _requests.post(
+            "https://emappdata.eastmoney.com/stockrank/getAllCurrentList",
+            json={
+                "appId": "appId01",
+                "globalId": "786e4c21-70dc-435a-93bb-38",
+                "marketType": "",
+                "pageNo": 1,
+                "pageSize": 50,
+                "rankType": "1" if sort_type == "popular" else "2",
+            },
+            timeout=10,
+        )
+        payload = resp.json()
+    except Exception as e:
+        logging.warning("获取东财热榜失败: %s", e)
+        return ok([])
+
+    data = (payload or {}).get("data") or []
+    result = []
+    for idx, item in enumerate(data):
+        result.append({
+            "rank": idx + 1,
+            "code": item.get("sc", ""),
+            "name": item.get("sn", ""),
+            "price": item.get("p", 0),
+            "change": item.get("zdp", 0),
+            "new_fans": item.get("xgf", 0),
+            "total_fans": item.get("fg", 0),
+        })
+    return ok(result)
 
 
 # ----------------------------------------------------------------------

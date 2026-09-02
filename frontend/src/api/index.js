@@ -48,6 +48,12 @@ export const searchStocks = (keyword, count = 8) => request('api/stock/search', 
 
 export const fetchQuote = (code) => request('api/stock/quote', { code })
 
+export const fetchKline = (code, period = 'day', count = 120) => request('api/stock/kline', { code, period, count })
+
+export const fetchMinute = (code) => request('api/stock/minute', { code })
+
+export const fetchIndicators = (code, period = 'day') => request('api/stock/indicators', { code, period })
+
 export const fetchBatchQuotes = (codes) => request('api/stock/batch', { codes: codes.join(',') })
 
 export const fetchMarketBreadth = () => request('api/rankings/market-breadth')

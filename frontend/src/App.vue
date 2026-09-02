@@ -9,7 +9,7 @@ import Rankings from './views/Rankings.vue'
 import Community from './views/Community.vue'
 
 const now = ref('')
-const currentView = ref('tools')
+const currentView = ref('rankings')
 let timer = null
 
 const views = {
