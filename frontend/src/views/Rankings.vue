@@ -1086,7 +1086,7 @@ function refresh() {
           </div>
         </div>
         <div class="chart-body">
-          <div class="chart-container">
+          <div class="chart-container" @mouseleave="hoverIndex = -1">
             <!-- Y轴标签 -->
             <div class="y-axis-labels">
               <span>{{ chartMax }}</span>
@@ -1097,7 +1097,7 @@ function refresh() {
               <span>{{ Math.round(chartMin * 0.67) }}</span>
               <span>{{ chartMin }}</span>
             </div>
-            <svg viewBox="0 0 1000 350" class="trend-chart" preserveAspectRatio="none" @mousemove="handleChartMouseMove($event, 'industry')" @mouseleave="hoverIndex = -1">
+            <svg viewBox="0 0 1000 350" class="trend-chart" preserveAspectRatio="none" @mousemove="handleChartMouseMove($event, 'industry')">
               <!-- 网格线 -->
               <g stroke="rgba(255,255,255,0.08)" stroke-width="1">
                 <line x1="0" y1="0" x2="1000" y2="0" />
