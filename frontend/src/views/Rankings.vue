@@ -1,126 +1,128 @@
-﻿<script setup>
+<script setup>
 import { ref } from 'vue'
+import { fetchMarketBreadth, fetchIndustryFlow, fetchStockRank } from '../api'
+import { useAutoRefresh } from '../composables/useAutoRefresh'
+import { num, pct, mv, trendClass } from '../utils/format'
 
-const emit = defineEmits(['navigate'])
-
-const activeTab = ref('fundflow')
 const tabs = [
-  { key: 'fundflow', label: '资金流向' },
   { key: 'sentiment', label: '市场情绪' },
-  { key: 'hotlist', label: '东财热榜' },
-  { key: 'news', label: '7x24' },
-  { key: 'calendar', label: '财经会议' },
+  { key: 'fundflow', label: '资金流向' },
   { key: 'ranking', label: '榜单' },
 ]
+const rankKinds = [
+  { key: 'gainers', label: '涨幅榜' },
+  { key: 'losers', label: '跌幅榜' },
+  { key: 'amount', label: '成交额榜' },
+  { key: 'turnover', label: '换手率榜' },
+]
 
-const subTab = ref('industry')
+const activeTab = ref('sentiment')
+const rankKind = ref('gainers')
 
-// 市场概览数据（模拟）
-const marketOverview = {
-  up: 3038,
-  flat: 111,
-  down: 1971,
-  median: 0.48,
-  up3: 516,
-  down3: 544,
-  mainInflow: -309.2,
-  mainInflowChange: -252.4,
-  turnover: 19104,
-  turnoverChange: -1796,
+const breadth = ref(null)
+const industryFlow = ref([])
+const rankList = ref([])
+const loading = ref(false)
+const lastUpdate = ref('')
+const loadError = ref('')
+
+// 防止并发请求竞态
+let seq = 0
+
+async function loadSentiment() {
+  const id = ++seq
+  try {
+    const data = await fetchMarketBreadth()
+    if (id !== seq) return
+    breadth.value = data
+    loadError.value = ''
+  } catch (e) {
+    if (id !== seq) return
+    breadth.value = null
+    loadError.value = e.message || '加载失败'
+  }
 }
 
-// 行业资金流向（模拟）
-const industryFlow = [
-  { name: '银行', inflow: 94.3, change: 1.2 },
-  { name: '电力', inflow: 62.3, change: 0.8 },
-  { name: '证券', inflow: 56.6, change: 2.1 },
-  { name: '文化传媒', inflow: 51.7, change: 3.5 },
-  { name: '种植业与林业', inflow: 48.3, change: 4.2 },
-  { name: '软件开发', inflow: 42.6, change: 1.5 },
-  { name: '零售', inflow: 42.4, change: 0.9 },
-  { name: '化学制药', inflow: 36.8, change: 1.8 },
-  { name: 'IT服务', inflow: 28.9, change: 0.6 },
-  { name: '汽车零部件', inflow: 28.8, change: 1.1 },
-  { name: '光伏设备', inflow: -17.1, change: -2.3 },
-  { name: '光学光电子', inflow: -19.5, change: -1.8 },
-  { name: '自动化设备', inflow: -21.1, change: -1.2 },
-  { name: '建筑材料', inflow: -25.3, change: -0.8 },
-  { name: '消费电子', inflow: -33.8, change: -2.1 },
-  { name: '电子化学品', inflow: -38.8, change: -1.5 },
-  { name: '小金属', inflow: -41.3, change: -2.8 },
-  { name: '电池', inflow: -44.9, change: -3.2 },
-  { name: '元件', inflow: -125.1, change: -4.5 },
-]
-
-// 涨幅榜（模拟）
-const topGainers = [
-  { code: '300001', name: '特锐德', price: 28.56, change: 20.02, turnover: 15.2, amount: '12.3亿' },
-  { code: '688001', name: '华兴源创', price: 45.32, change: 18.56, turnover: 12.8, amount: '8.7亿' },
-  { code: '300002', name: '神州泰岳', price: 12.89, change: 15.34, turnover: 18.5, amount: '15.6亿' },
-  { code: '002001', name: '新和成', price: 32.45, change: 12.78, turnover: 8.3, amount: '6.2亿' },
-  { code: '600001', name: '邯郸钢铁', price: 5.67, change: 10.11, turnover: 6.5, amount: '3.4亿' },
-  { code: '300003', name: '乐普医疗', price: 25.78, change: 9.85, turnover: 7.2, amount: '5.8亿' },
-  { code: '002002', name: '鸿达兴业', price: 4.32, change: 9.65, turnover: 9.1, amount: '4.2亿' },
-  { code: '688002', name: '睿创微纳', price: 68.90, change: 8.92, turnover: 5.6, amount: '7.1亿' },
-]
-
-// 跌幅榜（模拟）
-const topLosers = [
-  { code: '300004', name: '南风股份', price: 8.56, change: -12.34, turnover: 10.2, amount: '4.5亿' },
-  { code: '688003', name: '天准科技', price: 35.67, change: -10.56, turnover: 8.5, amount: '5.2亿' },
-  { code: '002003', name: '伟星股份', price: 15.23, change: -9.87, turnover: 6.3, amount: '3.8亿' },
-  { code: '300005', name: '探路者', price: 7.89, change: -8.65, turnover: 12.1, amount: '6.7亿' },
-  { code: '600002', name: '齐鲁石化', price: 6.45, change: -7.89, turnover: 4.5, amount: '2.1亿' },
-  { code: '002004', name: '华邦健康', price: 5.67, change: -7.23, turnover: 5.8, amount: '2.9亿' },
-  { code: '300006', name: '莱美药业', price: 6.78, change: -6.98, turnover: 7.5, amount: '3.6亿' },
-  { code: '688004', name: '博汇科技', price: 42.34, change: -6.54, turnover: 4.2, amount: '2.8亿' },
-]
-
-// 7x24 资讯（模拟）
-const newsList = [
-  { time: '14:55', content: '北向资金今日净买入 28.5 亿元，连续 3 日加仓', type: '资金' },
-  { time: '14:42', content: '央行开展 2000 亿元 7 天期逆回购操作，中标利率 1.8%', type: '政策' },
-  { time: '14:30', content: '半导体板块午后拉升，中芯国际涨超 6%', type: '板块' },
-  { time: '14:15', content: '国家发改委：加快推进新型基础设施建设', type: '政策' },
-  { time: '13:58', content: '黄金期货突破 2600 美元/盎司，创历史新高', type: '商品' },
-  { time: '13:45', content: '新能源汽车销量数据超预期，产业链个股集体走强', type: '行业' },
-  { time: '11:30', content: '午评：三大指数涨跌互现，粮食种业板块领涨', type: '市场' },
-  { time: '10:15', content: '证监会：进一步优化 IPO 审核流程，提高审核效率', type: '政策' },
-  { time: '9:45', content: '开盘：沪指低开 0.2%，半导体板块回调', type: '市场' },
-  { time: '9:30', content: '今日共有 3 只新股上市申购', type: '新股' },
-]
-
-// 财经会议（模拟）
-const calendarList = [
-  { date: '09-02', time: '10:00', title: '国家统计局发布 PMI 数据', importance: 'high' },
-  { date: '09-03', time: '20:30', title: '美国非农就业数据公布', importance: 'high' },
-  { date: '09-04', time: '14:00', title: '美联储公布经济状况褐皮书', importance: 'medium' },
-  { date: '09-05', time: '09:30', title: '中国贸易数据公布', importance: 'medium' },
-  { date: '09-06', time: '16:00', title: '欧元区 GDP 数据公布', importance: 'low' },
-]
-
-const rankingTab = ref('gainers')
-
-function trendClass(v) {
-  if (v > 0) return 'up'
-  if (v < 0) return 'down'
-  return 'flat'
+async function loadFundFlow() {
+  const id = ++seq
+  try {
+    const data = await fetchIndustryFlow(20)
+    if (id !== seq) return
+    industryFlow.value = data || []
+    loadError.value = ''
+  } catch (e) {
+    if (id !== seq) return
+    industryFlow.value = []
+    loadError.value = e.message || '加载失败'
+  }
 }
 
-function inflowColor(v) {
-  return v >= 0 ? 'var(--up)' : 'var(--down)'
+async function loadRanking() {
+  const id = ++seq
+  try {
+    const data = await fetchStockRank(rankKind.value, 20)
+    if (id !== seq) return
+    rankList.value = data || []
+    loadError.value = ''
+  } catch (e) {
+    if (id !== seq) return
+    rankList.value = []
+    loadError.value = e.message || '加载失败'
+  }
 }
 
-function getImportanceColor(level) {
-  if (level === 'high') return 'error'
-  if (level === 'medium') return 'warning'
-  return 'default'
+async function loadActive() {
+  loading.value = true
+  try {
+    if (activeTab.value === 'sentiment') await loadSentiment()
+    else if (activeTab.value === 'fundflow') await loadFundFlow()
+    else await loadRanking()
+    lastUpdate.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  } finally {
+    loading.value = false
+  }
 }
 
-function getImportanceText(level) {
-  if (level === 'high') return '重要'
-  if (level === 'medium') return '关注'
-  return '一般'
+function switchTab(key) {
+  activeTab.value = key
+  loadActive()
+}
+
+function switchRank(kind) {
+  rankKind.value = kind
+  loadRanking()
+}
+
+// 每 15 秒自动刷新；页面切回立即刷新
+useAutoRefresh(loadActive, 15000)
+
+// 涨跌分布柱状图数据（按档位升序）
+function distBars() {
+  const dist = (breadth.value && breadth.value.dist) || {}
+  const keys = Object.keys(dist).map(Number).sort((a, b) => a - b)
+  const max = Math.max(1, ...keys.map((k) => dist[k] || 0))
+  return keys.map((k) => {
+    const v = dist[k] || 0
+    return {
+      key: k,
+      label: k > 0 ? `+${k}` : String(k),
+      value: v,
+      pct: (v / max) * 100,
+      cls: k > 0 ? 'up' : k < 0 ? 'down' : 'flat',
+    }
+  })
+}
+
+// 涨跌占比
+function upRatio() {
+  if (!breadth.value || !breadth.value.total) return 0
+  return Math.round((breadth.value.up / breadth.value.total) * 100)
+}
+
+// 行业资金流向最大绝对值（用于柱状比例）
+function maxInflow() {
+  const arr = industryFlow.value || []
+  return Math.max(1, ...arr.map((i) => Math.abs(i.net_inflow || 0)))
 }
 </script>
 
@@ -131,7 +133,9 @@ function getImportanceText(level) {
       <div>
         <div class="brand-tag">MARKET DATA TERMINAL</div>
         <h1 class="page-title">行情中枢</h1>
-        <div class="page-sub">追踪指数、行业、热榜、资讯与资金趋势</div>
+        <div class="page-sub">市场情绪 · 行业资金流向 · 涨跌榜 —— 数据实时刷新
+          <span v-if="lastUpdate" class="update-time">更新于 {{ lastUpdate }}</span>
+        </div>
       </div>
     </header>
 
@@ -142,200 +146,139 @@ function getImportanceText(level) {
         :key="tab.key"
         class="tab-btn"
         :class="{ active: activeTab === tab.key }"
-        @click="activeTab = tab.key"
+        @click="switchTab(tab.key)"
       >
         {{ tab.label }}
       </button>
     </div>
 
-    <!-- 市场概览（所有标签共享） -->
-    <div class="market-overview">
-      <div class="overview-card">
-        <div class="overview-label">涨跌分布</div>
-        <div class="overview-main">
-          <span class="up num">{{ marketOverview.up }}</span>
-          <span class="sep">:</span>
-          <span class="flat num">{{ marketOverview.flat }}</span>
-          <span class="sep">:</span>
-          <span class="down num">{{ marketOverview.down }}</span>
-        </div>
-        <div class="overview-sub">
-          中位 <span class="up num">+{{ marketOverview.median }}%</span>
-          · ≥3% <span class="num">{{ marketOverview.up3 }}</span>
-          · ≤-3% <span class="num">{{ marketOverview.down3 }}</span>
-        </div>
-      </div>
-      <div class="overview-card">
-        <div class="overview-label">主力净流入</div>
-        <div class="overview-main">
-          <span class="num" :class="trendClass(marketOverview.mainInflow)">{{ marketOverview.mainInflow }}亿</span>
-        </div>
-        <div class="overview-sub">
-          同比昨日 <span class="num down">{{ marketOverview.mainInflowChange }}亿</span>
-        </div>
-      </div>
-      <div class="overview-card">
-        <div class="overview-label">成交额</div>
-        <div class="overview-main">
-          <span class="num">{{ marketOverview.turnover }}亿</span>
-        </div>
-        <div class="overview-sub">
-          同比昨日 <span class="num down">{{ marketOverview.turnoverChange }}亿</span>
-        </div>
-      </div>
+    <!-- 市场情绪 -->
+    <div v-if="activeTab === 'sentiment'" class="sentiment-view">
+      <a-spin :spinning="loading">
+        <template v-if="breadth">
+          <!-- 涨跌家数总览 -->
+          <div class="overview-grid">
+            <div class="overview-card">
+              <div class="overview-label">上涨家数</div>
+              <div class="overview-value num up">{{ breadth.up }}</div>
+              <div class="overview-sub">占比 {{ upRatio() }}%</div>
+            </div>
+            <div class="overview-card">
+              <div class="overview-label">平盘家数</div>
+              <div class="overview-value num flat">{{ breadth.flat }}</div>
+              <div class="overview-sub">横盘整理</div>
+            </div>
+            <div class="overview-card">
+              <div class="overview-label">下跌家数</div>
+              <div class="overview-value num down">{{ breadth.down }}</div>
+              <div class="overview-sub">占比 {{ 100 - upRatio() - Math.round(breadth.flat / breadth.total * 100) }}%</div>
+            </div>
+            <div class="overview-card">
+              <div class="overview-label">涨停 / 跌停</div>
+              <div class="overview-value num">
+                <span class="up">{{ breadth.limit_up }}</span>
+                <span class="dim"> / </span>
+                <span class="down">{{ breadth.limit_down }}</span>
+              </div>
+              <div class="overview-sub">含 20cm 板</div>
+            </div>
+          </div>
+
+          <!-- 涨跌分布 -->
+          <div class="dist-panel">
+            <div class="panel-title">涨跌分布（家数）</div>
+            <div class="dist-bars">
+              <div v-for="bar in distBars()" :key="bar.key" class="dist-bar-row">
+                <span class="dist-label num">{{ bar.label }}</span>
+                <div class="dist-track">
+                  <div class="dist-fill" :class="bar.cls" :style="{ width: bar.pct + '%' }"></div>
+                </div>
+                <span class="dist-value num">{{ bar.value }}</span>
+              </div>
+            </div>
+            <div class="panel-note">横轴为涨跌幅档位（%），纵轴为该档位股票家数</div>
+          </div>
+        </template>
+        <div v-else class="empty-state">{{ loadError ? '数据加载失败，请稍后自动重试' : '暂无市场情绪数据，请稍后刷新' }}</div>
+      </a-spin>
     </div>
 
     <!-- 资金流向 -->
     <div v-if="activeTab === 'fundflow'" class="fundflow-view">
-      <div class="sub-tabs">
-        <button class="sub-tab" :class="{ active: subTab === 'industry' }" @click="subTab = 'industry'">行业</button>
-        <button class="sub-tab" :class="{ active: subTab === 'concept' }" @click="subTab = 'concept'">概念</button>
-      </div>
-
-      <div class="flow-list">
-        <div v-for="item in industryFlow" :key="item.name" class="flow-item">
-          <div class="flow-name">{{ item.name }}</div>
-          <div class="flow-bar-wrap">
-            <div
-              class="flow-bar"
-              :class="{ positive: item.inflow >= 0, negative: item.inflow < 0 }"
-              :style="{ width: `${Math.min(Math.abs(item.inflow) / 125 * 100, 100)}%` }"
-            ></div>
-          </div>
-          <div class="flow-value num" :class="trendClass(item.inflow)">
-            {{ item.inflow > 0 ? '+' : '' }}{{ item.inflow }}亿
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 市场情绪 -->
-    <div v-if="activeTab === 'sentiment'" class="sentiment-view">
-      <div class="sentiment-grid">
-        <div class="sentiment-card">
-          <div class="sentiment-label">涨停家数</div>
-          <div class="sentiment-value num up">68</div>
-          <div class="sentiment-sub">较昨日 +12</div>
-        </div>
-        <div class="sentiment-card">
-          <div class="sentiment-label">跌停家数</div>
-          <div class="sentiment-value num down">15</div>
-          <div class="sentiment-sub">较昨日 -3</div>
-        </div>
-        <div class="sentiment-card">
-          <div class="sentiment-label">连板高度</div>
-          <div class="sentiment-value num">5板</div>
-          <div class="sentiment-sub">最高连板个股</div>
-        </div>
-        <div class="sentiment-card">
-          <div class="sentiment-label">炸板率</div>
-          <div class="sentiment-value num warning">28.5%</div>
-          <div class="sentiment-sub">较昨日 +5.2%</div>
-        </div>
-        <div class="sentiment-card">
-          <div class="sentiment-label">赚钱效应</div>
-          <div class="sentiment-value num up">偏强</div>
-          <div class="sentiment-sub">上涨家数占比 60.5%</div>
-        </div>
-        <div class="sentiment-card">
-          <div class="sentiment-label">北向资金</div>
-          <div class="sentiment-value num up">+28.5亿</div>
-          <div class="sentiment-sub">连续 3 日净流入</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 东财热榜 -->
-    <div v-if="activeTab === 'hotlist'" class="hotlist-view">
-      <div class="hotlist-table">
-        <div class="hotlist-header">
-          <span class="col-rank">排名</span>
-          <span class="col-name">股票名称</span>
-          <span class="col-code">代码</span>
-          <span class="col-price num">最新价</span>
-          <span class="col-change num">涨跌幅</span>
-          <span class="col-heat num">热度</span>
-        </div>
-        <div v-for="(item, idx) in topGainers.slice(0, 6)" :key="item.code" class="hotlist-row">
-          <span class="col-rank"><span class="rank-num" :class="`rank-${idx + 1}`">{{ idx + 1 }}</span></span>
-          <span class="col-name">{{ item.name }}</span>
-          <span class="col-code num">{{ item.code }}</span>
-          <span class="col-price num">{{ item.price }}</span>
-          <span class="col-change num up">+{{ item.change }}%</span>
-          <span class="col-heat num">{{ (10000 - idx * 1200).toLocaleString() }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 7x24 资讯 -->
-    <div v-if="activeTab === 'news'" class="news-view">
-      <div class="news-timeline">
-        <div v-for="(news, idx) in newsList" :key="idx" class="news-item">
-          <div class="news-time num">{{ news.time }}</div>
-          <div class="news-dot"></div>
-          <div class="news-content">
-            <a-tag size="small" class="news-tag">{{ news.type }}</a-tag>
-            <span class="news-text">{{ news.content }}</span>
+      <a-spin :spinning="loading">
+        <div v-if="industryFlow.length" class="flow-list">
+          <div v-for="(item, idx) in industryFlow" :key="item.code || item.name" class="flow-item">
+            <div class="flow-rank num">{{ idx + 1 }}</div>
+            <div class="flow-name">
+              {{ item.name }}
+              <span class="flow-pct num" :class="trendClass(item.pct)">{{ pct(item.pct) }}</span>
+            </div>
+            <div class="flow-bar-wrap">
+              <div
+                class="flow-bar"
+                :class="{ positive: item.net_inflow >= 0, negative: item.net_inflow < 0 }"
+                :style="{ width: `${Math.min(Math.abs(item.net_inflow || 0) / maxInflow() * 100, 100)}%` }"
+              ></div>
+            </div>
+            <div class="flow-value num" :class="trendClass(item.net_inflow)">
+              {{ item.net_inflow > 0 ? '+' : '' }}{{ mv(item.net_inflow) }}
+            </div>
+            <div class="flow-ratio num">{{ item.net_ratio !== null && item.net_ratio !== undefined ? item.net_ratio.toFixed(2) + '%' : '--' }}</div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- 财经会议 -->
-    <div v-if="activeTab === 'calendar'" class="calendar-view">
-      <div class="calendar-list">
-        <div v-for="(item, idx) in calendarList" :key="idx" class="calendar-item">
-          <div class="calendar-date">
-            <div class="date-day num">{{ item.date }}</div>
-            <div class="date-time num">{{ item.time }}</div>
-          </div>
-          <div class="calendar-content">
-            <div class="calendar-title">{{ item.title }}</div>
-            <a-tag :color="getImportanceColor(item.importance)" size="small">
-              {{ getImportanceText(item.importance) }}
-            </a-tag>
-          </div>
-        </div>
-      </div>
+        <div v-else class="empty-state">{{ loadError ? '数据加载失败，请稍后自动重试' : '暂无行业资金流向数据，请稍后刷新' }}</div>
+      </a-spin>
     </div>
 
     <!-- 榜单 -->
     <div v-if="activeTab === 'ranking'" class="ranking-view">
       <div class="ranking-tabs">
-        <button class="ranking-tab" :class="{ active: rankingTab === 'gainers' }" @click="rankingTab = 'gainers'">涨幅榜</button>
-        <button class="ranking-tab" :class="{ active: rankingTab === 'losers' }" @click="rankingTab = 'losers'">跌幅榜</button>
+        <button
+          v-for="k in rankKinds"
+          :key="k.key"
+          class="ranking-tab"
+          :class="{ active: rankKind === k.key }"
+          @click="switchRank(k.key)"
+        >
+          {{ k.label }}
+        </button>
       </div>
 
-      <div class="table-wrap">
-        <table class="ranking-table">
-          <thead>
-            <tr>
-              <th class="col-rank">排名</th>
-              <th>代码</th>
-              <th>名称</th>
-              <th class="num">最新价</th>
-              <th class="num">涨跌幅</th>
-              <th class="num">换手率</th>
-              <th class="num">成交额</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(item, idx) in (rankingTab === 'gainers' ? topGainers : topLosers)" :key="item.code">
-              <td class="col-rank"><span class="rank-badge" :class="`rank-${idx + 1}`">{{ idx + 1 }}</span></td>
-              <td class="num code-cell">{{ item.code }}</td>
-              <td class="name-cell">{{ item.name }}</td>
-              <td class="num">{{ item.price }}</td>
-              <td class="num" :class="trendClass(item.change)">{{ item.change > 0 ? '+' : '' }}{{ item.change }}%</td>
-              <td class="num">{{ item.turnover }}%</td>
-              <td class="num">{{ item.amount }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <a-spin :spinning="loading">
+        <div v-if="rankList.length" class="table-wrap">
+          <table class="ranking-table">
+            <thead>
+              <tr>
+                <th class="col-rank">排名</th>
+                <th>代码</th>
+                <th>名称</th>
+                <th class="num">最新价</th>
+                <th class="num">涨跌幅</th>
+                <th class="num">换手率</th>
+                <th class="num">成交额</th>
+                <th>行业</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(item, idx) in rankList" :key="item.code">
+                <td class="col-rank"><span class="rank-badge" :class="`rank-${idx + 1}`">{{ idx + 1 }}</span></td>
+                <td class="num code-cell">{{ item.code }}</td>
+                <td class="name-cell">{{ item.name }}</td>
+                <td class="num">{{ num(item.price, 2) }}</td>
+                <td class="num" :class="trendClass(item.pct)">{{ pct(item.pct) }}</td>
+                <td class="num">{{ pct(item.turnover) }}</td>
+                <td class="num">{{ mv(item.amount) }}</td>
+                <td class="industry-cell">{{ item.industry || '--' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="empty-state">{{ loadError ? '数据加载失败，请稍后自动重试' : '暂无榜单数据，请稍后刷新' }}</div>
+      </a-spin>
     </div>
 
     <footer class="page-foot">
-      行情数据为演示数据，仅供参考 · 不构成投资建议
+      数据来源于公开行情接口，仅供学习参考，不构成投资建议 · 行情可能存在延迟或误差
     </footer>
   </div>
 </template>
@@ -350,54 +293,57 @@ function getImportanceText(level) {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 2px;
-  color: #ff6b6b;
+  color: var(--accent);
   margin-bottom: 6px;
 }
 .page-title {
   font-size: 22px;
   font-weight: 700;
   margin: 0 0 6px;
+  color: var(--text);
 }
 .page-sub {
   color: var(--text-3);
   font-size: 13px;
 }
+.update-time {
+  color: var(--text-3);
+  margin-left: 8px;
+}
 
-/* 标签导航 */
+/* 标签 */
 .tab-nav {
   display: flex;
-  gap: 4px;
+  gap: 0;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 4px;
-  overflow-x: auto;
+  border-radius: 12px;
+  overflow: hidden;
 }
 .tab-btn {
-  padding: 10px 18px;
+  flex: 1;
+  padding: 14px 20px;
   background: none;
   border: none;
-  border-radius: 8px;
-  color: var(--text-2);
+  color: var(--text-3);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  white-space: nowrap;
+  border-bottom: 2px solid transparent;
 }
-.tab-btn:hover {
-  color: var(--text);
-  background: var(--panel-2);
-}
+.tab-btn:hover { color: var(--text-2); }
 .tab-btn.active {
-  background: #ff6b6b;
-  color: #fff;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+  background: rgba(79, 124, 255, 0.06);
 }
 
-/* 市场概览 */
-.market-overview {
+/* 市场情绪 */
+.overview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
 }
 .overview-card {
@@ -411,272 +357,156 @@ function getImportanceText(level) {
   color: var(--text-3);
   margin-bottom: 8px;
 }
-.overview-main {
-  font-size: 24px;
+.overview-value {
+  font-size: 26px;
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
-.overview-main .sep {
-  color: var(--text-3);
-  margin: 0 4px;
-  font-weight: 400;
-}
+.overview-value .dim { color: var(--text-3); font-size: 16px; }
 .overview-sub {
   font-size: 12px;
   color: var(--text-3);
 }
-
-/* 子标签 */
-.sub-tabs, .ranking-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-}
-.sub-tab, .ranking-tab {
-  padding: 8px 20px;
+.dist-panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+.dist-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dist-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dist-label {
+  width: 32px;
+  text-align: right;
+  font-size: 12px;
   color: var(--text-2);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
+  flex-shrink: 0;
 }
-.sub-tab:hover, .ranking-tab:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+.dist-track {
+  flex: 1;
+  height: 14px;
+  background: var(--panel-2);
+  border-radius: 4px;
+  overflow: hidden;
 }
-.sub-tab.active, .ranking-tab.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+.dist-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+.dist-fill.up { background: var(--up); }
+.dist-fill.down { background: var(--down); }
+.dist-fill.flat { background: #6f6f8a; }
+.dist-value {
+  width: 40px;
+  font-size: 12px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.panel-note {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-3);
 }
 
 /* 资金流向 */
 .flow-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px;
+  gap: 8px;
 }
 .flow-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
 }
-.flow-name {
-  width: 100px;
-  font-size: 13px;
-  font-weight: 500;
+.flow-rank {
+  width: 24px;
+  color: var(--text-3);
   flex-shrink: 0;
 }
+.flow-name {
+  width: 150px;
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flow-pct { margin-left: 6px; font-size: 12px; }
 .flow-bar-wrap {
   flex: 1;
-  height: 20px;
+  height: 10px;
   background: var(--panel-2);
-  border-radius: 4px;
-  position: relative;
+  border-radius: 5px;
   overflow: hidden;
 }
-.flow-bar {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s;
-}
-.flow-bar.positive {
-  background: linear-gradient(90deg, rgba(255, 77, 94, 0.6), var(--up));
-  margin-left: auto;
-}
-.flow-bar.negative {
-  background: linear-gradient(90deg, var(--down), rgba(0, 197, 142, 0.6));
-}
+.flow-bar { height: 100%; border-radius: 5px; transition: width 0.3s; }
+.flow-bar.positive { background: var(--up); }
+.flow-bar.negative { background: var(--down); }
 .flow-value {
-  width: 80px;
+  width: 90px;
   text-align: right;
   font-size: 13px;
   font-weight: 600;
   flex-shrink: 0;
 }
-
-/* 市场情绪 */
-.sentiment-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px;
-}
-.sentiment-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 18px;
-  text-align: center;
-}
-.sentiment-label {
+.flow-ratio {
+  width: 60px;
+  text-align: right;
   font-size: 12px;
   color: var(--text-3);
-  margin-bottom: 8px;
-}
-.sentiment-value {
-  font-size: 26px;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-.sentiment-sub {
-  font-size: 11px;
-  color: var(--text-3);
-}
-
-/* 热榜 */
-.hotlist-table {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.hotlist-header, .hotlist-row {
-  display: grid;
-  grid-template-columns: 60px 1fr 100px 100px 100px 100px;
-  padding: 12px 16px;
-  align-items: center;
-  gap: 8px;
-}
-.hotlist-header {
-  background: var(--panel-2);
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text-2);
-  border-bottom: 1px solid var(--border);
-}
-.hotlist-row {
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  transition: background 0.2s;
-}
-.hotlist-row:hover {
-  background: rgba(255, 107, 107, 0.06);
-}
-.hotlist-row:last-child {
-  border-bottom: none;
-}
-.rank-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  background: var(--panel-2);
-  color: var(--text-2);
-}
-.rank-1 { background: #ffd700; color: #000; }
-.rank-2 { background: #c0c0c0; color: #000; }
-.rank-3 { background: #cd7f32; color: #fff; }
-
-/* 7x24 资讯 */
-.news-timeline {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
-}
-.news-item {
-  display: flex;
-  gap: 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
-  position: relative;
-}
-.news-item:last-child {
-  border-bottom: none;
-}
-.news-time {
-  width: 50px;
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent);
-  padding-top: 2px;
-}
-.news-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  margin-top: 6px;
   flex-shrink: 0;
 }
-.news-content {
-  flex: 1;
+
+/* 榜单 */
+.ranking-tabs {
   display: flex;
-  align-items: flex-start;
   gap: 8px;
   flex-wrap: wrap;
 }
-.news-tag {
-  flex-shrink: 0;
-}
-.news-text {
-  font-size: 13px;
-  color: var(--text);
-  line-height: 1.6;
-}
-
-/* 财经会议 */
-.calendar-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.calendar-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+.ranking-tab {
+  padding: 8px 18px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px 18px;
-}
-.calendar-date {
-  text-align: center;
-  min-width: 70px;
-  padding-right: 16px;
-  border-right: 1px solid var(--border);
-}
-.date-day {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
-}
-.date-time {
-  font-size: 12px;
+  border-radius: 8px;
   color: var(--text-3);
-  margin-top: 2px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
 }
-.calendar-content {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.ranking-tab:hover { color: var(--text-2); border-color: var(--accent); }
+.ranking-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
 }
-.calendar-title {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* 榜单表格 */
 .table-wrap {
   overflow-x: auto;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
 }
 .ranking-table {
   width: 100%;
@@ -684,47 +514,47 @@ function getImportanceText(level) {
   font-size: 13px;
 }
 .ranking-table th {
-  background: var(--panel-2);
   padding: 12px 14px;
   text-align: left;
   font-weight: 600;
-  color: var(--text-2);
+  color: var(--text-3);
+  background: var(--panel-2);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 .ranking-table td {
-  padding: 12px 14px;
+  padding: 11px 14px;
   border-bottom: 1px solid var(--border);
+  color: var(--text-2);
   white-space: nowrap;
 }
-.ranking-table tbody tr:hover {
-  background: rgba(255, 107, 107, 0.06);
-}
-.col-rank {
-  width: 60px;
-  text-align: center;
-}
+.ranking-table tbody tr:hover { background: rgba(79, 124, 255, 0.06); }
+.ranking-table tbody tr:last-child td { border-bottom: none; }
+.col-rank { width: 56px; }
 .rank-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 700;
   background: var(--panel-2);
   color: var(--text-2);
 }
-.rank-1 { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
-.rank-2 { background: linear-gradient(135deg, #c0c0c0, #a0a0a0); color: #000; }
-.rank-3 { background: linear-gradient(135deg, #cd7f32, #b87333); color: #fff; }
-.code-cell {
-  color: var(--accent);
-  font-weight: 500;
-}
-.name-cell {
-  font-weight: 500;
+.rank-1 { background: var(--up); color: #fff; }
+.rank-2 { background: #f0883e; color: #fff; }
+.rank-3 { background: #d9a428; color: #fff; }
+.code-cell { color: var(--accent); font-weight: 500; }
+.name-cell { font-weight: 500; color: var(--text); }
+.industry-cell { color: var(--text-3); }
+
+.empty-state {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 14px;
 }
 
 .page-foot {
@@ -734,5 +564,11 @@ function getImportanceText(level) {
   color: var(--text-3);
   font-size: 12px;
   text-align: center;
+}
+
+@media (max-width: 768px) {
+  .flow-name { width: 100px; }
+  .flow-value { width: 70px; }
+  .flow-ratio { display: none; }
 }
 </style>

@@ -157,8 +157,13 @@ async function main() {
     await sleep(500);
     await closeDropdown();
     await clickByText(page, '.query-btn', '立即查询');
-    await sleep(2200);
-    const warnToast = await page.evaluate(() => /未找到|请检查输入|请输入/.test(document.body.textContent.replace(/\s+/g, '')));
+    // 轮询等待提示 toast（网络 + antd message 渲染有延迟）
+    let warnToast = false
+    for (let i = 0; i < 10; i++) {
+      await sleep(400)
+      warnToast = await page.evaluate(() => /未找到|请检查输入|请输入/.test(document.body.textContent.replace(/\s+/g, '')))
+      if (warnToast) break
+    }
     record('无效输入给出提示', warnToast);
 
     // 加关注
@@ -404,20 +409,38 @@ async function main() {
     // ================= 7. 行情中枢 =================
     await clickByText(page, '.bottom-nav-item', '行情');
     await sleep(1000);
-    for (const t of ['资金流向', '市场情绪', '东财热榜', '7x24', '财经会议', '榜单']) {
-      const ok = await clickByText(page, '.rank-tab, .tab-btn', t);
-      await sleep(500);
+    for (const t of ['市场情绪', '资金流向', '榜单']) {
+      const ok = await clickByText(page, '.tab-btn', t);
+      await sleep(1200);
       record(`行情中枢标签「${t}」切换`, ok);
     }
-    await clickByText(page, '.sub-tab', '行业');
-    await sleep(300);
-    await clickByText(page, '.sub-tab', '概念');
-    await sleep(300);
-    await clickByText(page, '.ranking-tab', '跌幅榜');
-    await sleep(300);
-    await clickByText(page, '.ranking-tab', '涨幅榜');
-    await sleep(300);
-    record('行情中枢子标签切换无异常', true);
+    // 市场情绪（涨跌分布：push2ex 通常可用）
+    await clickByText(page, '.tab-btn', '市场情绪');
+    await sleep(1500);
+    const sentimentRendered = await page.evaluate(() =>
+      document.body.textContent.includes('上涨家数') || document.body.textContent.includes('暂无市场情绪') || document.body.textContent.includes('数据加载失败')
+    );
+    record('市场情绪面板渲染', sentimentRendered);
+    // 资金流向（真实行业净流入，上游间歇性不可达时优雅降级）
+    await clickByText(page, '.tab-btn', '资金流向');
+    await sleep(2000);
+    const flowState = await page.evaluate(() => ({
+      rows: document.querySelectorAll('.flow-item').length,
+      empty: document.body.textContent.includes('暂无行业资金流向') || document.body.textContent.includes('数据加载失败'),
+    }));
+    record('资金流向渲染（数据或降级提示）', flowState.rows > 0 || flowState.empty, `${flowState.rows} 行`);
+    // 榜单四个子标签（真实榜单或降级提示）
+    await clickByText(page, '.tab-btn', '榜单');
+    await sleep(1500);
+    for (const k of ['涨幅榜', '跌幅榜', '成交额榜', '换手率榜']) {
+      const ok = await clickByText(page, '.ranking-tab', k);
+      await sleep(1500);
+      const st = await page.evaluate(() => ({
+        rows: document.querySelectorAll('.ranking-table tbody tr').length,
+        empty: document.body.textContent.includes('暂无榜单数据') || document.body.textContent.includes('数据加载失败'),
+      }));
+      record(`榜单子标签「${k}」切换`, ok && (st.rows > 0 || st.empty), `${st.rows} 行`);
+    }
 
     // ================= 8. 组合 & 复盘 =================
     await clickByText(page, '.bottom-nav-item', '组合');

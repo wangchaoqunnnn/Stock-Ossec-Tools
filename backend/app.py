@@ -15,6 +15,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from services.eastmoney import EastMoneyService
+from services.rankings import RankingsService
 
 try:  # python -m backend.app（项目根目录运行）
     from backend import config
@@ -28,6 +29,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("stock-ossec-tools")
 
 service = EastMoneyService()
+rankings = RankingsService()
 
 
 def ok(data=None, message="ok"):
@@ -106,6 +108,40 @@ def stock_batch():
         data = service.get_batch_quotes(code_list)
     except Exception:
         return fail("行情服务暂时不可用，请稍后重试", code=503, status=503)
+    return ok(data)
+
+
+@app.route("/api/rankings/market-breadth")
+def market_breadth():
+    try:
+        data = rankings.market_breadth()
+    except Exception:
+        return fail("行情数据暂时不可用，请稍后重试", code=503, status=503)
+    if data is None:
+        return fail("市场涨跌分布数据暂时不可用", code=503, status=503)
+    return ok(data)
+
+
+@app.route("/api/rankings/industry-flow")
+def industry_flow():
+    try:
+        limit = max(5, min(50, int(request.args.get("limit", "20"))))
+    except ValueError:
+        limit = 20
+    data = rankings.industry_flow(limit)
+    return ok(data)
+
+
+@app.route("/api/rankings/top")
+def stock_rank():
+    sort = request.args.get("type", "gainers")
+    if sort not in ("gainers", "losers", "amount", "turnover"):
+        return fail("type 仅支持 gainers / losers / amount / turnover", code=400, status=400)
+    try:
+        limit = max(5, min(100, int(request.args.get("limit", "20"))))
+    except ValueError:
+        limit = 20
+    data = rankings.stock_rank(sort, limit)
     return ok(data)
 
 

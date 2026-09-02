@@ -66,9 +66,10 @@
 - **异动寻龙**：12列数据表格（时间/代码/名称/现价/涨跌幅/涨速/成交额/换手率/量比/异动类型/原因/操作），展示当日异动股票。
 
 #### 3.7 行情中枢（Rankings）
-- **市场概览**：展示涨跌家数、涨停/跌停家数、市场总成交额等大盘数据。
-- **行业资金流向**：展示各行业板块资金流入流出排名。
-- **涨幅榜/跌幅榜/成交额榜/换手率榜**：多维度股票排行榜。
+- **市场情绪**：实时市场涨跌家数分布（上涨/平盘/下跌家数、涨停/跌停家数、上涨占比）+ 分档涨跌分布柱状图。
+- **资金流向**：行业板块主力资金净流入排名（净流入金额、净占比、涨跌幅）。
+- **榜单**：涨幅榜 / 跌幅榜 / 成交额榜 / 换手率榜（沪深京 A 股）。
+- 数据每 15 秒自动刷新，页面切回立即刷新；上游间歇性不可达时优雅降级为提示态。
 
 #### 3.8 复盘社区（Community）
 - 精选复盘文章列表，展示文章标题、日期、摘要。
@@ -109,11 +110,14 @@ Flask 后端 (Python 3.8)
    ├── /api/indices         主要指数行情（A股/亚太/美股/期货）
    ├── /api/stock/search    股票检索（支持科创板/创业板）
    ├── /api/stock/quote     个股行情详情
-   └── /api/stock/batch     批量行情查询
+   ├── /api/stock/batch     批量行情查询
+   ├── /api/rankings/market-breadth  市场涨跌分布
+   ├── /api/rankings/industry-flow   行业资金流向
+   └── /api/rankings/top             股票榜单（涨/跌/成交额/换手）
         │  短缓存 (TTL 10s) + 主备双数据源并发请求（谁先成功用谁，主源优先）
         ▼
-主源：东方财富公开行情 (push2.eastmoney.com / searchapi / codetable)
-备源：腾讯行情 (qt.gtimg.cn) —— 东财挂起/失败时快速兜底
+主源：东方财富公开行情 (push2.eastmoney.com / push2ex / searchapi / codetable)
+备源：腾讯行情 (qt.gtimg.cn) —— 东财挂起/失败时快速兜底（行情中枢榜单类接口无腾讯回退，失败时优雅降级）
 ```
 
 - 前端通过 Vite 开发代理（`/api` → `:5000`）或同源部署访问后端。
@@ -135,6 +139,9 @@ Flask 后端 (Python 3.8)
 | GET | `/api/stock/search` | `keyword=关键词&count=8` | 股票模糊检索 |
 | GET | `/api/stock/quote` | `code=600000` | 个股行情详情 |
 | GET | `/api/stock/batch` | `codes=600000,000001` | 批量行情查询 |
+| GET | `/api/rankings/market-breadth` | - | 市场涨跌家数分布 |
+| GET | `/api/rankings/industry-flow` | `limit=20` | 行业主力资金净流入排名 |
+| GET | `/api/rankings/top` | `type=gainers\|losers\|amount\|turnover&limit=20` | 股票榜单 |
 
 响应统一格式：`{"code": 0, "message": "ok", "data": {...}}`。
 
@@ -160,7 +167,8 @@ StockOSSecTools/
 │   ├── services/
 │   │   ├── __init__.py
 │   │   ├── cache.py          # TTL 内存缓存
-│   │   └── eastmoney.py      # 行情服务（东财+腾讯并发双源、检索、批量行情）
+│   │   ├── eastmoney.py      # 行情服务（东财+腾讯并发双源、检索、批量行情）
+│   │   └── rankings.py       # 行情中枢服务（涨跌分布/行业资金流/榜单）
 │   └── tests/
 │       └── test_api.py       # 后端单元测试（mock 上游，21 项）
 └── frontend/
@@ -183,7 +191,7 @@ StockOSSecTools/
             ├── Tools.vue         # 工具页（个股查询 + 指数 + 关注清单）
             ├── Portfolio.vue     # 投资组合
             ├── Utility.vue       # 量化工具（今日关注/选股器/异动寻龙）
-            ├── Rankings.vue      # 行情中枢
+            ├── Rankings.vue      # 行情中枢（市场情绪/资金流向/榜单，实时数据）
             └── Community.vue     # 复盘社区
 ```
 

@@ -49,3 +49,9 @@ export const searchStocks = (keyword, count = 8) => request('api/stock/search', 
 export const fetchQuote = (code) => request('api/stock/quote', { code })
 
 export const fetchBatchQuotes = (codes) => request('api/stock/batch', { codes: codes.join(',') })
+
+export const fetchMarketBreadth = () => request('api/rankings/market-breadth')
+
+export const fetchIndustryFlow = (limit = 20) => request('api/rankings/industry-flow', { limit })
+
+export const fetchStockRank = (type = 'gainers', limit = 20) => request('api/rankings/top', { type, limit })

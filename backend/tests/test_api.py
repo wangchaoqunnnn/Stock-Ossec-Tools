@@ -10,6 +10,7 @@ from unittest import mock
 
 import app as app_module
 from services import eastmoney as em
+from services import rankings as rk
 
 app = app_module.app
 app.config["TESTING"] = False  # 走统一错误处理，便于断言响应结构
@@ -94,6 +95,7 @@ class BaseTestCase(unittest.TestCase):
         self.client = app.test_client()
         em.requests.get = mock.Mock()
         em.time.sleep = mock.Mock()  # 关闭重试等待
+        app_module.rankings._cache.clear()
 
 
 class HealthTest(BaseTestCase):
@@ -286,6 +288,65 @@ class RoutingTest(BaseTestCase):
             resp = self.client.get("/")
             self.assertEqual(resp.status_code, 200)
             self.assertIn("后端 API 正常", resp.get_data(as_text=True))
+
+
+class RankingsTest(BaseTestCase):
+    def test_market_breadth(self):
+        payload = {"data": {"fenbu": [
+            {"-1": 10}, {"-10": 1}, {"0": 5}, {"1": 8}, {"10": 2},
+        ]}}
+        rk._get = mock.Mock(return_value=payload)
+        resp = self.client.get("/api/rankings/market-breadth")
+        body = resp.get_json()
+        self.assertEqual(body["code"], 0)
+        d = body["data"]
+        self.assertEqual(d["up"], 10)      # 涨幅档位 1(+8) 与 10(+2)
+        self.assertEqual(d["down"], 11)    # 跌幅档位 -1(10) 与 -10(1)
+        self.assertEqual(d["flat"], 5)
+        self.assertEqual(d["limit_up"], 2)
+        self.assertEqual(d["limit_down"], 1)
+        self.assertEqual(d["total"], 26)
+
+    def test_market_breadth_unavailable(self):
+        rk._get = mock.Mock(side_effect=em.DataSourceError("down"))
+        resp = self.client.get("/api/rankings/market-breadth")
+        self.assertEqual(resp.status_code, 503)
+
+    def test_industry_flow(self):
+        payload = {"data": {"diff": [
+            {"f12": "BK0475", "f14": "银行", "f2": 1000.0, "f3": 1.5, "f62": 2e8, "f184": 5.0},
+            {"f12": "BK0476", "f14": "证券", "f2": 2000.0, "f3": -0.5, "f62": -1e8, "f184": -3.0},
+        ]}}
+        rk._get = mock.Mock(return_value=payload)
+        resp = self.client.get("/api/rankings/industry-flow?limit=10")
+        body = resp.get_json()
+        self.assertEqual(body["code"], 0)
+        self.assertEqual(len(body["data"]), 2)
+        self.assertEqual(body["data"][0]["name"], "银行")
+        self.assertEqual(body["data"][0]["net_inflow"], 2e8)
+        self.assertEqual(body["data"][1]["net_inflow"], -1e8)
+
+    def test_stock_rank(self):
+        payload = {"data": {"diff": [
+            {"f12": "600000", "f14": "浦发银行", "f2": 9.35, "f3": 2.07, "f5": 1000,
+             "f6": 1e8, "f8": 1.2, "f9": 5.0, "f10": 1.1, "f20": 1e10, "f23": 0.5, "f100": "银行"},
+        ]}}
+        rk._get = mock.Mock(return_value=payload)
+        resp = self.client.get("/api/rankings/top?type=gainers&limit=10")
+        body = resp.get_json()
+        self.assertEqual(body["code"], 0)
+        self.assertEqual(len(body["data"]), 1)
+        self.assertEqual(body["data"][0]["code"], "600000")
+        self.assertEqual(body["data"][0]["industry"], "银行")
+
+    def test_stock_rank_invalid_type(self):
+        resp = self.client.get("/api/rankings/top?type=xxx")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_rankings_clamp_limit(self):
+        rk._get = mock.Mock(return_value={"data": {"diff": []}})
+        resp = self.client.get("/api/rankings/top?type=gainers&limit=9999")
+        self.assertEqual(resp.status_code, 200)
 
 
 if __name__ == "__main__":
