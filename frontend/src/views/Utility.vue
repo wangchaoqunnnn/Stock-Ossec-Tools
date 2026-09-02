@@ -1,5 +1,6 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { message } from 'ant-design-vue'
 
 const emit = defineEmits(['navigate'])
 
@@ -86,6 +87,118 @@ const anomalyList = [
 function formatChange(v) {
   return v > 0 ? `+${v.toFixed(2)}%` : `${v.toFixed(2)}%`
 }
+
+// ========== 今日关注：搜索过滤 ==========
+const filteredWatchList = computed(() => {
+  const kw = (watchKeyword.value || '').trim().toLowerCase()
+  if (!kw) return watchList
+  return watchList.filter((item) =>
+    item.code.toLowerCase().includes(kw) ||
+    item.industry.toLowerCase().includes(kw) ||
+    String(item.recChange).includes(kw)
+  )
+})
+
+function applyWatchFilter() {
+  const kw = (watchKeyword.value || '').trim()
+  message.success(kw ? `已按「${kw}」筛选` : '已显示全部数据')
+}
+
+function resetWatchFilter() {
+  watchKeyword.value = ''
+  message.success('已重置筛选')
+}
+
+function keepColumns() {
+  message.info('列配置功能建设中')
+}
+
+// ========== 详情弹窗（今日关注 / 异动寻龙共用） ==========
+const detailVisible = ref(false)
+const detailItem = ref(null)
+
+function showDetail(item) {
+  detailItem.value = item
+  detailVisible.value = true
+}
+
+function detailRows(item) {
+  if (!item) return []
+  const rows = []
+  const push = (label, value, cls) => rows.push({ label, value, cls })
+  if (item.code) push('代码', item.code)
+  if (item.name) push('名称', item.name)
+  if (item.industry) push('行业', item.industry)
+  if (item.price !== undefined) push('现价', item.price.toFixed(2), item.pricePct >= 0 ? 'up' : item.pricePct < 0 ? 'down' : '')
+  if (item.recChange !== undefined) push('推荐后涨幅', `${formatChange(item.recChangePct)}`, item.recChangePct >= 0 ? 'up' : 'down')
+  if (item.change !== undefined) push('涨跌幅', `${formatChange(item.change)}`, item.change >= 0 ? 'up' : 'down')
+  if (item.speed !== undefined) push('涨速', `${item.speed >= 0 ? '+' : ''}${item.speed.toFixed(2)}%`, item.speed >= 0 ? 'up' : 'down')
+  if (item.volumeRatio !== undefined) push('量比', item.volumeRatio.toFixed(2))
+  if (item.turnover !== undefined) push('换手率', `${item.turnover.toFixed(2)}%`)
+  if (item.darkFund !== undefined && item.darkFund !== '--') push('暗盘资金', item.darkFund, item.darkFundColor)
+  if (item.lightFund !== undefined && item.lightFund !== '--') push('明盘资金', item.lightFund, item.lightFundColor)
+  if (item.marketCap) push('流通市值', item.marketCap)
+  if (item.anomalyCount !== undefined) push('异动次数', `${item.anomalyCount}次`)
+  if (item.reason) push('异动原因', item.reason)
+  if (item.date) push('关注日期', item.date)
+  return rows
+}
+
+// ========== 选股器 ==========
+const pickerCollapsed = ref(false)
+
+function togglePicker() {
+  pickerCollapsed.value = !pickerCollapsed.value
+}
+
+function editConditions() {
+  pickerCollapsed.value = false
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function confirmPicker() {
+  if (!selectedTags.value.length) {
+    message.warning('请先选择筛选条件')
+    return
+  }
+  message.success(`已按 ${selectedTags.value.length} 项条件生成选股结果`)
+}
+
+// ========== 结果区 ==========
+function refreshResult() {
+  message.success('数据已刷新')
+}
+
+function downloadCsv(rows, filename) {
+  if (!rows || !rows.length) {
+    message.warning('没有可导出的数据')
+    return
+  }
+  const headers = Object.keys(rows[0])
+  const escape = (v) => `"${String(v).replace(/"/g, '""')}"`
+  const lines = [headers.join(','), ...rows.map((r) => headers.map((h) => escape(r[h])).join(','))]
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  // 延迟释放，避免部分浏览器在下载开始前撤销 URL 导致失败
+  setTimeout(() => {
+    document.body.removeChild(a)
+    URL.revokeObjectURL(a.href)
+  }, 1000)
+  message.success(`已导出 ${rows.length} 条数据`)
+}
+
+function exportPickerResult() {
+  downloadCsv(pickerResults, '选股结果.csv')
+}
+
+function exportAllAnomaly() {
+  downloadCsv(anomalyList, '异动寻龙.csv')
+}
 </script>
 
 <template>
@@ -116,16 +229,16 @@ function formatChange(v) {
     <div v-if="activeTab === 'watch'" class="tab-content">
       <div class="toolbar">
         <div class="search-group">
-          <input v-model="watchKeyword" class="search-input" placeholder="搜股票名/代码" />
-          <button class="btn-primary">搜索</button>
+          <input v-model="watchKeyword" class="search-input" placeholder="搜股票名/代码" @keyup.enter="applyWatchFilter" />
+          <button class="btn-primary" @click="applyWatchFilter">搜索</button>
         </div>
         <div class="date-group">
           <span class="date-label">日期</span>
           <input type="date" v-model="watchDate" class="date-input" />
         </div>
         <div class="action-group">
-          <button class="btn-outline">刷新</button>
-          <button class="btn-outline">留列</button>
+          <button class="btn-outline" @click="resetWatchFilter">刷新</button>
+          <button class="btn-outline" @click="keepColumns">留列</button>
         </div>
       </div>
 
@@ -147,7 +260,7 @@ function formatChange(v) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(item, idx) in watchList" :key="idx">
+            <tr v-for="(item, idx) in filteredWatchList" :key="idx">
               <td class="text-muted">{{ item.date }}</td>
               <td class="code-cell">{{ item.code }}</td>
               <td>{{ item.industry }}</td>
@@ -164,18 +277,18 @@ function formatChange(v) {
               <td class="num">{{ item.volumeRatio.toFixed(2) }}</td>
               <td class="num">{{ item.turnover.toFixed(2) }}%</td>
               <td class="num">{{ item.marketCap }}</td>
-              <td><button class="btn-detail">详情</button></td>
+              <td><button class="btn-detail" @click="showDetail(item)">详情</button></td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div class="table-footer">共 {{ watchList.length }} 条</div>
+      <div class="table-footer">共 {{ filteredWatchList.length }} 条</div>
     </div>
 
     <!-- 选股器 -->
     <div v-if="activeTab === 'stockpicker'" class="tab-content">
       <!-- 条件选择区 -->
-      <div class="picker-panel">
+      <div class="picker-panel" v-show="!pickerCollapsed">
         <div class="picker-sidebar">
           <button
             v-for="cat in pickerCategories"
@@ -204,13 +317,13 @@ function formatChange(v) {
           </template>
         </div>
       </div>
-      <div class="collapse-btn">^ 收起条件</div>
+      <div class="collapse-btn" @click="togglePicker">{{ pickerCollapsed ? '∨ 展开条件' : '^ 收起条件' }}</div>
 
       <!-- 已选条件 -->
       <div class="selected-panel">
         <div class="panel-header">
           <span class="panel-title">已选条件</span>
-          <button class="link-btn">修改</button>
+          <button class="link-btn" @click="editConditions">修改</button>
         </div>
         <div class="selected-content" v-if="selectedTags.length === 0">
           请选择筛选条件
@@ -222,7 +335,7 @@ function formatChange(v) {
 
       <div class="selected-count">
         <span>已选 <span class="num">{{ selectedTags.length }}</span> 项</span>
-        <button class="btn-primary small" :disabled="selectedTags.length === 0">确定</button>
+        <button class="btn-primary small" :disabled="selectedTags.length === 0" @click="confirmPicker">确定</button>
       </div>
 
       <!-- 选股结果 -->
@@ -232,8 +345,8 @@ function formatChange(v) {
           <div class="result-actions">
             <span class="date-label">日期</span>
             <input type="date" value="2026-09-01" class="date-input small" />
-            <button class="btn-outline small">刷新</button>
-            <button class="btn-outline small">导出</button>
+            <button class="btn-outline small" @click="refreshResult">刷新</button>
+            <button class="btn-outline small" @click="exportPickerResult">导出</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -270,8 +383,8 @@ function formatChange(v) {
     <!-- 异动寻龙 -->
     <div v-if="activeTab === 'anomaly'" class="tab-content">
       <div class="anomaly-header">
-        <span class="count-text">共 73 只</span>
-        <button class="btn-outline">导出全部</button>
+        <span class="count-text">共 {{ anomalyList.length }} 只</span>
+        <button class="btn-outline" @click="exportAllAnomaly">导出全部</button>
       </div>
 
       <div class="table-wrap">
@@ -305,12 +418,28 @@ function formatChange(v) {
               <td><span class="vip-tag">{{ item.signal }}</span></td>
               <td><span class="vip-tag">{{ item.strongLine }}</span></td>
               <td class="num">{{ item.anomalyCount }}</td>
-              <td><button class="btn-detail">详情</button></td>
+              <td><button class="btn-detail" @click="showDetail(item)">详情</button></td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <!-- 详情弹窗 -->
+    <a-modal
+      v-model:open="detailVisible"
+      :title="detailItem ? `${detailItem.name || detailItem.code || '详情'} - 详情` : '详情'"
+      :footer="null"
+      width="480px"
+    >
+      <div v-if="detailItem" class="detail-grid">
+        <div v-for="(row, idx) in detailRows(detailItem)" :key="idx" class="detail-row">
+          <span class="detail-row-label">{{ row.label }}</span>
+          <span class="detail-row-value num" :class="row.cls">{{ row.value }}</span>
+        </div>
+      </div>
+      <div class="data-note" style="margin-top: 12px;">* 演示数据仅供参考，不构成投资建议</div>
+    </a-modal>
 
     <footer class="page-foot">
       选股器与异动数据为演示数据，仅供参考，不构成投资建议
@@ -728,5 +857,33 @@ function formatChange(v) {
   color: var(--text-3);
   font-size: 12px;
   text-align: center;
+}
+
+/* 详情弹窗 */
+.detail-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.detail-row:last-child {
+  border-bottom: none;
+}
+.detail-row-label {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.detail-row-value {
+  color: var(--text);
+  font-weight: 600;
+}
+.data-note {
+  font-size: 11px;
+  color: var(--text-3);
 }
 </style>

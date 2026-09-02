@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { searchStocks, fetchQuote } from '../api'
@@ -228,6 +228,40 @@ function addToWatchlist() {
   }
 }
 
+function removeFromWatchlist() {
+  if (!quote.value) return
+  try {
+    const raw = localStorage.getItem(WATCHLIST_KEY)
+    const list = raw ? JSON.parse(raw) : []
+    const next = list.filter((item) => item.code !== quote.value.code)
+    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(next))
+    inWatchlist.value = false
+    message.success(`已将 ${quote.value.name} 移出关注清单`)
+    window.dispatchEvent(new CustomEvent('watchlist-changed'))
+  } catch (e) {
+    message.error('操作失败，请重试')
+  }
+}
+
+function toggleFavorite() {
+  if (!quote.value) return
+  if (inWatchlist.value) {
+    removeFromWatchlist()
+  } else {
+    addToWatchlist()
+  }
+}
+
+// 详情弹窗操作
+function refreshDetail() {
+  if (!quote.value) return
+  loadQuote(quote.value.code)
+}
+
+function moreAction() {
+  message.info('更多功能建设中')
+}
+
 async function doSearch(val) {
   const kw = (val || '').trim()
   if (!kw) {
@@ -255,7 +289,9 @@ async function doSearch(val) {
 }
 
 function onSearch(val) {
-  searchInput.value = val
+  // antd 在关闭下拉（Escape / 外部点击）时会触发 @search('')，
+  // 空值不覆盖已输入的文本，避免丢失用户刚输入的查询词
+  if (val) searchInput.value = val
   clearTimeout(timer)
   timer = setTimeout(() => doSearch(val), 300)
 }
@@ -289,7 +325,11 @@ function onInputKeyDown(e) {
 }
 
 async function handleQuery() {
-  const kw = (searchInput.value || keyword.value).trim()
+  // 优先读取输入框实时文本（antd 选中/关闭下拉时会清空输入框，
+  // 但 @mousedown 已在清空前把文本存入 searchInput）
+  const inputEl = document.querySelector('.ant-select-selection-search-input')
+  const raw = (inputEl && inputEl.value) || searchInput.value || keyword.value
+  const kw = String(raw || '').trim()
   if (!kw) {
     message.warning('请输入股票代码或名称')
     return
@@ -305,6 +345,13 @@ async function handleQuery() {
     if (options.value.length) await loadQuote(options.value[0].code)
     else message.warning('未找到匹配的股票，请检查输入')
   }
+}
+
+function captureInput() {
+  // antd 在下拉关闭（Escape / 外部点击）时会清空搜索输入框，
+  // 这里在按钮 mousedown（清空发生前）把当前文本存入 searchInput
+  const el = document.querySelector('.ant-select-selection-search-input')
+  if (el && el.value) searchInput.value = el.value
 }
 
 async function loadQuote(code) {
@@ -362,7 +409,7 @@ onMounted(() => loadQuote('600519'))
             </template>
           </a-select>
         </div>
-        <a-button type="primary" size="large" class="query-btn" @click="handleQuery">
+        <a-button type="primary" size="large" class="query-btn" @mousedown="captureInput" @click="handleQuery">
           立即查询
         </a-button>
       </div>
@@ -450,9 +497,9 @@ onMounted(() => loadQuote('600519'))
             <span class="detail-price num" :class="trendClass(quote.change_pct)">{{ num(quote.now_price, 2) }}</span>
             <span class="detail-change num" :class="trendClass(quote.change_pct)">{{ pct(quote.change_pct) }}</span>
             <div class="detail-actions">
-              <button class="icon-btn" title="刷新">↻</button>
-              <button class="icon-btn star" title="收藏">★</button>
-              <button class="icon-btn" title="更多">⋯</button>
+              <button class="icon-btn" title="刷新" @click="refreshDetail">↻</button>
+              <button class="icon-btn star" title="收藏" @click="toggleFavorite">{{ inWatchlist ? '★' : '☆' }}</button>
+              <button class="icon-btn" title="更多" @click="moreAction">⋯</button>
             </div>
           </div>
           <div class="detail-code">代码: {{ quote.code }}</div>

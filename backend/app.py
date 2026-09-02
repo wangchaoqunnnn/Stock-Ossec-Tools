@@ -8,6 +8,7 @@
 若存在 frontend/dist 构建产物，则同时托管前端静态页面（单进程部署）。
 """
 
+import logging
 import os
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -23,6 +24,9 @@ except ImportError:  # python app.py（backend 目录运行）
 app = Flask(__name__, static_folder=None)
 CORS(app)
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("stock-ossec-tools")
+
 service = EastMoneyService()
 
 
@@ -36,6 +40,13 @@ def fail(message, code=1, status=200):
     return jsonify({"code": code, "message": message, "data": None}), status
 
 
+@app.errorhandler(Exception)
+def handle_unexpected_error(exc):
+    """兜底异常处理：未预期错误返回 JSON 500，避免泄露堆栈。"""
+    logger.exception("Unhandled error: %s", exc)
+    return fail("服务器内部错误，请稍后重试", code=500, status=500)
+
+
 @app.route("/api/health")
 def health():
     return ok({"status": "up", "service": "stock-ossec-tools-backend"})
@@ -45,7 +56,7 @@ def health():
 def indices():
     market = request.args.get("market", "cn")
     if market not in config.INDICES:
-        return fail("market 仅支持 cn / hk / us")
+        return fail("market 仅支持 cn / asia / us / futures", code=400, status=400)
     data, source = service.get_indices(market)
     return ok({"market": market, "label": config.MARKET_LABELS.get(market, market), "source": source, "items": data})
 
@@ -67,7 +78,7 @@ def stock_search():
 def stock_quote():
     code = request.args.get("code", "").strip()
     if not code:
-        return fail("缺少 code 参数")
+        return fail("缺少 code 参数", code=400, status=400)
     if not (code.isdigit() and len(code) == 6):
         return fail("股票代码格式不正确，应为 6 位数字", code=400, status=400)
     try:
@@ -75,7 +86,7 @@ def stock_quote():
     except Exception:  # 双数据源均失败
         return fail("行情服务暂时不可用，请稍后重试", code=503, status=503)
     if data is None:
-        return fail("未查询到该股票行情，请检查代码是否正确", code=404)
+        return fail("未查询到该股票行情，请检查代码是否正确", code=404, status=404)
     data["source"] = source
     return ok(data)
 
@@ -91,7 +102,10 @@ def stock_batch():
     for c in code_list:
         if not (c.isdigit() and len(c) == 6):
             return fail("股票代码格式不正确：%s" % c, code=400, status=400)
-    data = service.get_batch_quotes(code_list)
+    try:
+        data = service.get_batch_quotes(code_list)
+    except Exception:
+        return fail("行情服务暂时不可用，请稍后重试", code=503, status=503)
     return ok(data)
 
 

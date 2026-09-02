@@ -1,12 +1,20 @@
 # -*- coding: utf-8 -*-
 """行情数据源封装（Python 3.8 兼容）。
 
-主数据源：东方财富公开行情接口（字段丰富：行业、涨速等）；
+主数据源：东方财富公开行情接口（字段丰富）；
 备用数据源：腾讯行情（qt.gtimg.cn，结构简单稳定）。
-东财请求失败或异常时自动回退到腾讯，保证页面可用。
+
+设计要点：
+- 主备数据源**并发请求**：哪个先成功返回用哪个（主源成功优先），
+  避免主源挂起时用户长时间等待；
+- 请求带短缓存（TTL 10s），控制上游频率；
+- 所有对外方法返回 ``(data, source)`` 或纯 ``data``（见各方法注释），
+  source 为 "eastmoney" / "tencent"，用于标识实际数据来源。
 """
 
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
@@ -22,7 +30,11 @@ class DataSourceError(Exception):
     """上游数据源异常。"""
 
 
-def _num(value):
+# 共享线程池：并发请求主备数据源。常驻线程在进程退出时自然回收。
+_EXECUTOR = ThreadPoolExecutor(max_workers=4)
+
+
+def _num(value: Any) -> Optional[float]:
     """将可能为 '-'/None 的值安全转为数字。"""
     if value is None:
         return None
@@ -34,8 +46,11 @@ def _num(value):
         return None
 
 
-def _get(url, params=None, retries=2):
-    """带超时与重试的 GET 请求，返回 JSON（东财接口）。"""
+def _get(url: str, params: Optional[dict] = None, retries: int = 1) -> dict:
+    """带超时与重试的 GET 请求，返回 JSON（东财接口）。
+
+    默认重试 1 次（共 2 次尝试）：调用方通常有腾讯回退，无需多次重试拖慢响应。
+    """
     last_error = None
     for attempt in range(retries + 1):
         try:
@@ -50,16 +65,51 @@ def _get(url, params=None, retries=2):
 
 
 class EastMoneyService(object):
-    """行情数据服务（东财主源 + 腾讯回退，带短缓存）。"""
+    """行情数据服务（东财主源 + 腾讯回退，并发取最快可用源，带短缓存）。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._cache = TTLCache(ttl=config.CACHE_TTL)
+
+    # ------------------------------------------------------------------
+    # 并发编排
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _first_available(primary: Callable, fallback: Callable) -> Tuple[Any, str]:
+        """并发执行主备源，返回 ``(data, source)``。
+
+        - 优先返回主源的成功结果（非空）；
+        - 主源未完成或失败时，返回备源的成功结果；
+        - 两源均正常响应但无数据 -> ``(None, "tencent")``（调用方按"未找到"处理）；
+        - 两源均异常 -> 抛出最后一个 DataSourceError（调用方按"服务不可用"处理）。
+        """
+        futures = {
+            "eastmoney": _EXECUTOR.submit(primary),
+            "tencent": _EXECUTOR.submit(fallback),
+        }
+        done, pending = wait(list(futures.values()), return_when=FIRST_COMPLETED)
+        order = [name for name, f in futures.items() if f in done]
+        order += [name for name, f in futures.items() if f not in done]
+
+        any_success = False
+        last_error = None
+        for name in order:
+            try:
+                data = futures[name].result()
+            except DataSourceError as exc:
+                last_error = exc
+                continue
+            any_success = True
+            if data:
+                return data, name
+        if any_success:
+            return None, "tencent"
+        raise last_error
 
     # ------------------------------------------------------------------
     # 工具方法
     # ------------------------------------------------------------------
     @staticmethod
-    def _code_to_secid(code):
+    def _code_to_secid(code: str) -> Optional[str]:
         """A 股代码启发式转换为东财 secid（1=沪 0=深/北）。"""
         code = str(code).strip()
         if not code:
@@ -69,7 +119,7 @@ class EastMoneyService(object):
         return "0.%s" % code
 
     @staticmethod
-    def _code_to_tencent(code):
+    def _code_to_tencent(code: str) -> Optional[str]:
         """A 股代码转换为腾讯行情代码（sh/sz/bj 前缀）。"""
         code = str(code).strip()
         if not code:
@@ -81,7 +131,7 @@ class EastMoneyService(object):
         return "sz%s" % code
 
     @staticmethod
-    def _friendly_time(ts):
+    def _friendly_time(ts: Any) -> Optional[str]:
         """时间戳（秒或毫秒）转为 'YYYY-MM-DD HH:MM:SS'。"""
         try:
             ts = float(ts)
@@ -94,19 +144,13 @@ class EastMoneyService(object):
     # ------------------------------------------------------------------
     # 腾讯行情（备用源）
     # ------------------------------------------------------------------
-    _TENCENT_INDEX_CODES = {
-        "cn": ["sh000001", "sz399001", "sh000300", "sz399006", "sh000688", "bj899050"],
-        "hk": ["hkHSI", "hkHSTECH", "hkHSCEI"],
-        "us": ["usDJI", "usIXIC", "usINX"],
-    }
-
-    def _tencent_fetch(self, codes):
+    def _tencent_fetch(self, codes: List[str]) -> Dict[str, List[str]]:
         """批量获取腾讯行情，返回 {原始代码: 字段列表}。"""
         if not codes:
             return {}
         try:
             resp = requests.get(
-                "https://qt.gtimg.cn/q=%s" % ",".join(codes),
+                config.TENCENT_QUOTE_API + ",".join(codes),
                 timeout=config.UPSTREAM_TIMEOUT,
             )
             resp.raise_for_status()
@@ -128,14 +172,14 @@ class EastMoneyService(object):
         return result
 
     @staticmethod
-    def _clean_name(name):
+    def _clean_name(name: str) -> str:
         """腾讯部分名称带空格（如 '五 粮 液'），去除之。"""
         return (name or "").replace(" ", "").strip()
 
     @staticmethod
-    def _tencent_row(fields):
+    def _tencent_row(fields: List[str]) -> Dict[str, Any]:
         """腾讯 A 股字段列表 -> 规范化行情 dict。"""
-        def pick(idx):
+        def pick(idx: int) -> Optional[float]:
             if idx < len(fields):
                 return _num(fields[idx])
             return None
@@ -160,9 +204,9 @@ class EastMoneyService(object):
         }
 
     @staticmethod
-    def _tencent_index_row(fields):
+    def _tencent_index_row(fields: List[str]) -> Dict[str, Any]:
         """腾讯指数（港股/美股等紧凑布局）字段列表 -> 规范化 dict。"""
-        def pick(idx):
+        def pick(idx: int) -> Optional[float]:
             if idx < len(fields):
                 return _num(fields[idx])
             return None
@@ -179,11 +223,11 @@ class EastMoneyService(object):
         }
 
     # ------------------------------------------------------------------
-    # 股票检索
+    # 股票检索（无腾讯回退，codetable -> suggest 双通道）
     # ------------------------------------------------------------------
     _A_SHARE_TYPES = {"沪A", "深A", "京A", "科创板", "创业板"}
 
-    def search(self, keyword, count=8):
+    def search(self, keyword: str, count: int = 8) -> List[dict]:
         """按代码/名称关键词检索 A 股。"""
         keyword = (keyword or "").strip()
         if not keyword:
@@ -200,11 +244,11 @@ class EastMoneyService(object):
         self._cache.set(key, results)
         return results
 
-    def _search_codetable(self, keyword, count):
+    def _search_codetable(self, keyword: str, count: int) -> List[dict]:
         """优先使用的检索接口（返回结构稳定）。"""
         try:
             payload = _get(
-                "https://search-codetable.eastmoney.com/codetable/search/web",
+                config.EASTMONEY_CODETABLE_API,
                 {"client": "web", "keyword": keyword, "pageIndex": 1, "pageSize": count},
             )
         except DataSourceError:
@@ -231,7 +275,7 @@ class EastMoneyService(object):
             )
         return results
 
-    def _search_suggest(self, keyword, count):
+    def _search_suggest(self, keyword: str, count: int) -> List[dict]:
         """兜底检索接口（响应结构不稳定，做双重兼容）。"""
         try:
             payload = _get(
@@ -277,10 +321,10 @@ class EastMoneyService(object):
     # ------------------------------------------------------------------
     # 个股行情详情
     # ------------------------------------------------------------------
-    def get_quote(self, code):
-        """获取单只股票行情详情（东财失败时回退腾讯）。
+    def get_quote(self, code: str) -> Tuple[Optional[dict], Optional[str]]:
+        """获取单只股票行情详情（主备源并发，优先主源）。
 
-        返回 ``(quote, source)``，source 为 "eastmoney"/"tencent"。
+        返回 ``(quote, source)``；双数据源均无结果时返回 ``(None, "tencent")``。
         """
         code = str(code or "").strip()
         if not code:
@@ -290,87 +334,79 @@ class EastMoneyService(object):
         if cached is not None:
             return cached
 
-        quote = None
-        source = "eastmoney"
-        error = None
+        data, source = self._first_available(
+            lambda: self._quote_from_eastmoney(code),
+            lambda: self._quote_from_tencent(code),
+        )
+        if data is not None:
+            self._cache.set(key, (data, source))
+        return data, source
+
+    def _quote_from_eastmoney(self, code: str) -> dict:
         secid = self._code_to_secid(code)
-        try:
-            payload = _get(
-                config.EASTMONEY_QUOTE_API,
-                {
-                    "secid": secid,
-                    "fields": config.QUOTE_FIELDS,
-                    "fltt": "2",
-                    "invt": "2",
-                },
-            )
-            d = (payload or {}).get("data")
-            if d:
-                quote = {
-                    "code": str(d.get("f57") or code),
-                    "name": str(d.get("f58") or ""),
-                    "now_price": _num(d.get("f43")),
-                    "change": _num(d.get("f169")),
-                    "change_pct": _num(d.get("f170")),
-                    "open": _num(d.get("f46")),
-                    "high": _num(d.get("f44")),
-                    "low": _num(d.get("f45")),
-                    "prev_close": _num(d.get("f60")),
-                    "volume": _num(d.get("f47")),
-                    "amount": _num(d.get("f48")),
-                    "turnover": _num(d.get("f168")),
-                    "volume_ratio": _num(d.get("f50")),
-                    "pe": _num(d.get("f162")),
-                    "pb": _num(d.get("f167")),
-                    "total_mv": _num(d.get("f116")),
-                    "float_mv": _num(d.get("f117")),
-                    "amplitude": _num(d.get("f171")),
-                    "time": self._friendly_time(d.get("f86")),
-                }
-        except DataSourceError as exc:
-            error = exc
+        payload = _get(
+            config.EASTMONEY_QUOTE_API,
+            {"secid": secid, "fields": config.QUOTE_FIELDS, "fltt": "2", "invt": "2"},
+        )
+        d = (payload or {}).get("data")
+        if not d:
+            return None
+        return {
+            "code": str(d.get("f57") or code),
+            "name": str(d.get("f58") or ""),
+            "now_price": _num(d.get("f43")),
+            "change": _num(d.get("f169")),
+            "change_pct": _num(d.get("f170")),
+            "open": _num(d.get("f46")),
+            "high": _num(d.get("f44")),
+            "low": _num(d.get("f45")),
+            "prev_close": _num(d.get("f60")),
+            "volume": _num(d.get("f47")),
+            "amount": _num(d.get("f48")),
+            "turnover": _num(d.get("f168")),
+            "volume_ratio": _num(d.get("f50")),
+            "pe": _num(d.get("f162")),
+            "pb": _num(d.get("f167")),
+            "total_mv": _num(d.get("f116")),
+            "float_mv": _num(d.get("f117")),
+            "amplitude": _num(d.get("f171")),
+            "time": self._friendly_time(d.get("f86")),
+        }
 
-        if quote is None:
-            # 回退腾讯
-            source = "tencent"
-            tcode = self._code_to_tencent(code)
-            rows = self._tencent_fetch([tcode])
-            fields = rows.get(tcode)
-            if fields:
-                base = self._tencent_row(fields)
-                quote = {
-                    "code": code,
-                    "name": self._clean_name(fields[1]) if len(fields) > 1 else "",
-                    "now_price": base["now_price"],
-                    "change": base["change"],
-                    "change_pct": base["change_pct"],
-                    "open": base["open"],
-                    "high": base["high"],
-                    "low": base["low"],
-                    "prev_close": base["prev_close"],
-                    "volume": base["volume"],
-                    "amount": base["amount"],
-                    "turnover": base["turnover"],
-                    "volume_ratio": base["volume_ratio"],
-                    "pe": base["pe"],
-                    "pb": base["pb"],
-                    "total_mv": base["total_mv"],
-                    "float_mv": base["float_mv"],
-                    "amplitude": base["amplitude"],
-                    "time": None,
-                }
-            elif error is not None:
-                raise error
-
-        if quote is not None:
-            self._cache.set(key, (quote, source))
-        return quote, source
+    def _quote_from_tencent(self, code: str) -> dict:
+        tcode = self._code_to_tencent(code)
+        rows = self._tencent_fetch([tcode])
+        fields = rows.get(tcode)
+        if not fields:
+            return None
+        base = self._tencent_row(fields)
+        return {
+            "code": code,
+            "name": self._clean_name(fields[1]) if len(fields) > 1 else "",
+            "now_price": base["now_price"],
+            "change": base["change"],
+            "change_pct": base["change_pct"],
+            "open": base["open"],
+            "high": base["high"],
+            "low": base["low"],
+            "prev_close": base["prev_close"],
+            "volume": base["volume"],
+            "amount": base["amount"],
+            "turnover": base["turnover"],
+            "volume_ratio": base["volume_ratio"],
+            "pe": base["pe"],
+            "pb": base["pb"],
+            "total_mv": base["total_mv"],
+            "float_mv": base["float_mv"],
+            "amplitude": base["amplitude"],
+            "time": None,
+        }
 
     # ------------------------------------------------------------------
     # 主要指数
     # ------------------------------------------------------------------
-    def get_indices(self, market="cn"):
-        """获取主要指数行情。market: cn / hk / us。
+    def get_indices(self, market: str = "cn") -> Tuple[List[dict], str]:
+        """获取主要指数行情。market: cn / asia / us / futures。
 
         返回 ``(list, source)``。
         """
@@ -380,25 +416,21 @@ class EastMoneyService(object):
         if cached is not None:
             return cached
 
-        result = self._indices_eastmoney(market)
-        source = "eastmoney"
-        if not result:
-            result = self._indices_tencent(market)
-            source = "tencent"
+        data, source = self._first_available(
+            lambda: self._indices_eastmoney(market),
+            lambda: self._indices_tencent(market),
+        )
+        data = data if data is not None else []
+        self._cache.set(key, (data, source))
+        return data, source
 
-        self._cache.set(key, (result, source))
-        return result, source
-
-    def _indices_eastmoney(self, market):
+    def _indices_eastmoney(self, market: str) -> List[dict]:
         indices = config.INDICES[market]
         secids = ",".join(item["secid"] for item in indices)
-        try:
-            payload = _get(
-                config.EASTMONEY_ULIST_API,
-                {"secids": secids, "fields": config.ULIST_FIELDS, "fltt": "2", "invt": "2"},
-            )
-        except DataSourceError:
-            return []
+        payload = _get(
+            config.EASTMONEY_ULIST_API,
+            {"secids": secids, "fields": config.ULIST_FIELDS, "fltt": "2", "invt": "2"},
+        )
 
         diff = ((payload or {}).get("data") or {}).get("diff") or []
         if not isinstance(diff, list):
@@ -424,23 +456,39 @@ class EastMoneyService(object):
             )
         return result
 
-    def _indices_tencent(self, market):
-        tcodes = self._TENCENT_INDEX_CODES.get(market, self._TENCENT_INDEX_CODES["cn"])
+    def _indices_tencent(self, market: str) -> List[dict]:
+        """腾讯回退：仅取腾讯支持的指数（tencent 代码非空的条目）。
+
+        腾讯不支持的指数（如日经225、期货）保留条目但字段为 None，
+        避免与其它市场的代码错位。
+        """
+        indices = config.INDICES[market]
+        tencent_codes = [item.get("tencent") for item in indices]
+        fetchable = [c for c in tencent_codes if c]
         try:
-            rows = self._tencent_fetch(tcodes)
+            rows = self._tencent_fetch(fetchable)
         except DataSourceError:
-            return []
+            rows = {}
 
         result = []
-        for index_item, tcode in zip(config.INDICES[market], tcodes):
-            fields = rows.get(tcode)
+        for item, tcode in zip(indices, tencent_codes):
+            fields = rows.get(tcode) if tcode else None
             if not fields:
+                result.append(
+                    {
+                        "name": item["name"],
+                        "secid": item["secid"],
+                        "now": None,
+                        "change": None,
+                        "change_pct": None,
+                    }
+                )
                 continue
             base = self._tencent_index_row(fields)
             result.append(
                 {
-                    "name": index_item["name"],
-                    "secid": index_item["secid"],
+                    "name": item["name"],
+                    "secid": item["secid"],
                     "now": base["now"],
                     "change": base["change"],
                     "change_pct": base["change_pct"],
@@ -449,10 +497,10 @@ class EastMoneyService(object):
         return result
 
     # ------------------------------------------------------------------
-    # 批量行情（关注清单用）
+    # 批量行情
     # ------------------------------------------------------------------
-    def get_batch_quotes(self, codes):
-        """批量获取 A 股行情（东财 ulist 接口，失败时回退腾讯批量）。
+    def get_batch_quotes(self, codes: List[str]) -> List[dict]:
+        """批量获取 A 股行情（主备源并发，优先主源）。
 
         返回 ``list``，每个元素为规范化行情 dict。
         """
@@ -464,22 +512,20 @@ class EastMoneyService(object):
         if cached is not None:
             return cached
 
-        result = self._batch_eastmoney(codes)
-        if not result:
-            result = self._batch_tencent(codes)
+        data, _source = self._first_available(
+            lambda: self._batch_eastmoney(codes),
+            lambda: self._batch_tencent(codes),
+        )
+        data = data if data is not None else []
+        self._cache.set(key, data)
+        return data
 
-        self._cache.set(key, result)
-        return result
-
-    def _batch_eastmoney(self, codes):
+    def _batch_eastmoney(self, codes: List[str]) -> List[dict]:
         secids = ",".join(self._code_to_secid(c) for c in codes)
-        try:
-            payload = _get(
-                config.EASTMONEY_ULIST_API,
-                {"secids": secids, "fields": config.ULIST_FIELDS, "fltt": "2", "invt": "2"},
-            )
-        except DataSourceError:
-            return []
+        payload = _get(
+            config.EASTMONEY_ULIST_API,
+            {"secids": secids, "fields": config.ULIST_FIELDS, "fltt": "2", "invt": "2"},
+        )
 
         diff = ((payload or {}).get("data") or {}).get("diff") or []
         if not isinstance(diff, list):
@@ -519,12 +565,9 @@ class EastMoneyService(object):
             )
         return result
 
-    def _batch_tencent(self, codes):
+    def _batch_tencent(self, codes: List[str]) -> List[dict]:
         tcodes = [self._code_to_tencent(c) for c in codes]
-        try:
-            rows = self._tencent_fetch(tcodes)
-        except DataSourceError:
-            return []
+        rows = self._tencent_fetch(tcodes)
 
         result = []
         for code, tcode in zip(codes, tcodes):

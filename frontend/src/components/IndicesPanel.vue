@@ -42,9 +42,10 @@ function switchMarket(key) {
   load(key)
 }
 
-function toggleAutoRefresh() {
-  autoRefresh.value = !autoRefresh.value
-  if (autoRefresh.value) {
+function toggleAutoRefresh(checked) {
+  // v-model:checked 已更新 autoRefresh，这里只负责启停定时器
+  // （不要再翻转 autoRefresh，否则与 v-model 双重取反导致开关无效）
+  if (checked) {
     countdown.value = 60
     startTimers()
   } else {
