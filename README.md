@@ -215,6 +215,36 @@ cd ../backend && python app.py                # 后端自动托管 frontend/dist
 
 访问 `http://127.0.0.1:5000/` 即为完整页面（API 与页面同源）。
 
+### 3.1 子路径部署（重要）
+
+前端**不使用任何绝对路径**：
+
+- Vite 构建配置 `base: './'`：产物 HTML 中 JS/CSS 引用为相对路径（`./assets/...`）；
+- API 封装采用相对请求（`fetch('api/...')`）：跟随页面所在目录解析，与页面同前缀。
+
+因此应用可直接部署到任意子路径（如 `https://host/stock-tools/`），只要反向代理把
+该前缀下的 `api/` 转发到后端即可：
+
+```nginx
+# Nginx 示例：子路径部署
+location /stock-tools/ {
+    alias /var/www/stock-ossec/frontend/dist/;   # 静态页面（含相对路径资源）
+    try_files $uri $uri/ /stock-tools/index.html;
+}
+location /stock-tools/api/ {
+    proxy_pass http://127.0.0.1:5000/api/;       # API 转发到 Flask
+    proxy_set_header Host $host;
+}
+```
+
+> 若部署后页面提示「服务响应异常（非 JSON，疑似返回了 HTML）」或旧版的「响应解析失败」，
+> 说明 `api/` 请求未到达 Flask 后端（被静态服务器当成了普通页面/404 处理），请按上述方式
+> 配置 API 反向代理，或确认页面与后端同源同前缀。
+
+前端附带子路径部署验证工具（先启动后端 :5000 与 `frontend/subpath-test-server.cjs`
+端口 :8899，再执行 `node frontend/subpath-e2e.cjs`）：在 `http://127.0.0.1:8899/app/`
+下检查页面、静态资源与 API 是否全部经 `/app/api/` 正常加载。
+
 ### 4. 测试
 
 ```bash

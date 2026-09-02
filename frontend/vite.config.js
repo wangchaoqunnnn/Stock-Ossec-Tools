@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// 开发模式：/api 代理到本地 Flask 后端 (5000)
+// base: './' —— 构建产物的 JS/CSS 引用使用相对路径，
+// 保证部署到任意子路径（如 https://host/stock-tools/）都能正确加载资源
 export default defineConfig({
   plugins: [vue()],
+  base: './',
   server: {
     port: 5173,
     proxy: {
