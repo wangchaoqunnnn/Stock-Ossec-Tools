@@ -166,11 +166,17 @@ function handleChartMouseMove(event, type) {
   hoverTooltipX.value = event.clientX
   hoverTooltipY.value = event.clientY
   
-  // 计算时间
-  const totalMinutes = 240 // 4小时交易时间
+  // 计算时间（交易时段 09:30-11:30、13:00-15:00，中间午休 90 分钟）
+  const totalMinutes = 240
   const minutes = Math.round((index / 48) * totalMinutes)
-  const hour = 9 + Math.floor(minutes / 60)
-  const minute = minutes % 60
+  let absMinute
+  if (minutes <= 120) {
+    absMinute = 9 * 60 + 30 + minutes // 上午 09:30 起
+  } else {
+    absMinute = 13 * 60 + (minutes - 120) // 下午 13:00 起
+  }
+  const hour = Math.floor(absMinute / 60)
+  const minute = absMinute % 60
   hoverTime.value = `${hour}:${minute.toString().padStart(2, '0')}`
   
   // 获取悬停数据
@@ -208,15 +214,13 @@ function selectNone() {
   selectedIndustryNames.value = []
 }
 
-// 生成趋势数据
+// 生成趋势数据（当日累计净流入示意：随时间均匀逼近收盘值）
+// 注意：实时分时净流入需专用接口，这里以收盘累计值为终点做示意
 function genTrendData(baseNet, volatility) {
   const points = []
-  let val = 0
   const steps = 48
   for (let i = 0; i <= steps; i++) {
-    val += (Math.random() - 0.48) * volatility
-    if (i === steps) val = baseNet
-    points.push(val)
+    points.push((baseNet * i) / steps)
   }
   return points
 }
@@ -1079,7 +1083,10 @@ function refresh() {
       <!-- 净流入折线图 -->
       <div class="chart-panel">
         <div class="chart-header">
-          <span class="chart-title">净流入（亿元）</span>
+          <div>
+            <span class="chart-title">净流入（亿元）</span>
+            <span class="chart-note">* 折线为当日累计净流入示意，收盘值为真实净流入</span>
+          </div>
           <div class="chart-actions">
             <button class="action-btn" @click="selectAll">全选</button>
             <button class="action-btn action-btn-secondary" @click="selectNone">全不选</button>
@@ -2446,6 +2453,11 @@ function refresh() {
   font-size: 14px;
   font-weight: 600;
   color: #f1f5f9;
+}
+.chart-note {
+  margin-left: 10px;
+  font-size: 11px;
+  color: #64748b;
 }
 .chart-actions {
   display: flex;
