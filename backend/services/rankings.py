@@ -21,6 +21,7 @@ class RankingsService(object):
 
     _CLIST_API = "https://push2.eastmoney.com/api/qt/clist/get"
     _DIST_API = "https://push2ex.eastmoney.com/getTopicZDFenBu"
+    _FFLOW_KLINE_API = "https://push2.eastmoney.com/api/qt/stock/fflow/kline/get"
     # A 股范围（沪深京）
     _A_SHARE_FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
     # 行业板块（剔除部分特殊板块）
@@ -217,6 +218,52 @@ class RankingsService(object):
                     "pct": _num(row.get("f3")),
                     "net_inflow": _num(row.get("f62")),
                     "net_ratio": _num(row.get("f184")),
+                }
+            )
+        self._cache.set(key, result)
+        return result
+
+    # ------------------------------------------------------------------
+    # 分钟级资金流
+    # ------------------------------------------------------------------
+    def flow_minute(self, code: str, market: str = "90") -> List[dict]:
+        """个股/板块分钟级主力净流入（每分钟一条，正=流入、负=流出）。
+
+        code: 板块为 BKxxxx（market=90），个股为 6 位代码（market=0/1）。
+        """
+        code = str(code or "").strip()
+        if not code:
+            return []
+        key = "flowmin:%s:%s" % (market, code)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        try:
+            payload = _get(
+                self._FFLOW_KLINE_API,
+                {
+                    "lmt": 0,
+                    "klt": 1,
+                    "secid": "%s.%s" % (market, code),
+                    "fields1": "f1,f2,f3,f7",
+                    "fields2": "f51,f52,f53,f54,f55,f56",
+                },
+            )
+        except DataSourceError:
+            return []
+
+        data = (payload or {}).get("data") or {}
+        klines = data.get("klines") or []
+        result = []
+        for line in klines:
+            parts = str(line).split(",")
+            if len(parts) < 2:
+                continue
+            result.append(
+                {
+                    "time": parts[0].split(" ")[-1],  # 形如 09:31
+                    "main_net": _num(parts[1]),        # 主力净流入（元）
                 }
             )
         self._cache.set(key, result)

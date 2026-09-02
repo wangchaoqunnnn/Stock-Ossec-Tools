@@ -154,6 +154,19 @@ def stock_flow():
     return ok(data)
 
 
+@app.route("/api/rankings/flow-minute")
+def flow_minute():
+    code = request.args.get("code", "").strip()
+    if not code:
+        return fail("缺少 code 参数", code=400, status=400)
+    market = request.args.get("market", "90").strip()
+    try:
+        data = rankings.flow_minute(code, market)
+    except Exception:
+        return fail("分钟资金流数据暂时不可用", code=503, status=503)
+    return ok(data)
+
+
 @app.route("/api/rankings/top")
 def stock_rank():
     sort = request.args.get("type", "gainers")
