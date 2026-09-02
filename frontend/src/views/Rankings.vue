@@ -16,6 +16,7 @@ const activeTopTab = ref('fundflow')
 const fundSubTabs = [
   { key: 'industry', label: '行业' },
   { key: 'concept', label: '概念' },
+  { key: 'stock', label: '个股' },
 ]
 const activeFundSubTab = ref('industry')
 
@@ -148,6 +149,7 @@ const hoverIndex = ref(-1)
 const hoverData = ref([])
 const hoverTime = ref('')
 const hoverTooltipX = ref(0)
+const hoverTooltipY = ref(0)
 
 function handleChartMouseMove(event, type) {
   const svg = event.currentTarget
@@ -160,7 +162,9 @@ function handleChartMouseMove(event, type) {
     return
   }
   hoverIndex.value = index
-  hoverTooltipX.value = x
+  // 使用视口坐标，提示框跟随鼠标移动
+  hoverTooltipX.value = event.clientX
+  hoverTooltipY.value = event.clientY
   
   // 计算时间
   const totalMinutes = 240 // 4小时交易时间
@@ -182,6 +186,7 @@ function handleChartMouseMove(event, type) {
 fetchMarketBreadth()
 fetchIndustryFlow()
 fetchConceptFlow()
+fetchStockFlow()
 
 // 选中的行业（用数组代替Set）
 const selectedIndustryNames = ref([])
@@ -370,6 +375,26 @@ function buildPath(points, width, height, minVal, maxVal) {
 
 const chartMin = -90
 const chartMax = 90
+
+// ========== 个股资金流向 ==========
+const stocks = ref([])
+
+async function fetchStockFlow() {
+  try {
+    const res = await fetch('/api/rankings/stock-flow?limit=30')
+    const data = await res.json()
+    if (data.code === 0 && data.data && data.data.length > 0) {
+      stocks.value = data.data.map((item) => ({
+        code: item.code,
+        name: item.name,
+        net: parseFloat((item.net_inflow / 100000000).toFixed(2)), // 转换为亿元
+        change: item.pct,
+      }))
+    }
+  } catch (e) {
+    console.error('获取个股资金流失败:', e)
+  }
+}
 
 // ========== 涨停复盘 ==========
 const limitUpStocks = ref([
@@ -1125,7 +1150,7 @@ function refresh() {
             <span>15:00</span>
           </div>
           <!-- 悬停提示 -->
-          <div v-if="hoverIndex >= 0 && hoverData.length > 0" class="hover-tooltip" :style="{ left: hoverTooltipX + 'px' }">
+          <div v-if="hoverIndex >= 0 && hoverData.length > 0" class="hover-tooltip" :style="{ left: hoverTooltipX + 'px', top: hoverTooltipY + 'px' }">
             <div class="hover-time">{{ hoverTime }}</div>
             <div class="hover-list">
               <div v-for="item in hoverData" :key="item.name" class="hover-item">
@@ -1529,6 +1554,34 @@ function refresh() {
                 <span class="legend-name">{{ c.name }}</span>
                 <span class="legend-value" :class="c.net >= 0 ? 'up' : 'down'">{{ c.net >= 0 ? '+' : '' }}{{ c.net }}亿</span>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 个股内容 -->
+      <div v-else-if="activeFundSubTab === 'stock'" class="stock-view">
+        <div class="info-bar">
+          <div class="info-left">
+            <span class="info-count">共 {{ stocks.length }} 只个股</span>
+            <span class="info-time">更新于 {{ lastUpdate }}</span>
+          </div>
+          <div class="info-right">
+            <button class="refresh-btn" @click="refresh">
+              <span class="refresh-icon">↻</span> 刷新
+            </button>
+          </div>
+        </div>
+
+        <div class="ranking-panel">
+          <div class="panel-title">个股主力净流入排名</div>
+          <div class="ranking-list">
+            <div v-for="(s, idx) in stocks" :key="s.code || s.name" class="ranking-item">
+              <span class="rank-num" :class="idx < 3 ? 'top' : ''">{{ idx + 1 }}</span>
+              <span class="rank-name">{{ s.name }} <span style="color:#64748b;font-size:11px;" class="num">{{ s.code }}</span></span>
+              <span class="rank-change" :class="s.change >= 0 ? 'up' : 'down'">{{ s.change >= 0 ? '+' : '' }}{{ s.change }}%</span>
+              <span class="rank-net" :class="s.net >= 0 ? 'up' : 'down'">{{ s.net >= 0 ? '+' : '' }}{{ s.net }}亿</span>
+              <span class="rank-arrow">›</span>
             </div>
           </div>
         </div>
@@ -2478,17 +2531,18 @@ function refresh() {
 }
 
 .hover-tooltip {
-  position: absolute;
-  top: 20px;
+  position: fixed;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid #334155;
   border-radius: 8px;
   padding: 12px;
-  z-index: 100;
+  z-index: 1000;
   min-width: 200px;
   max-height: 400px;
   overflow-y: auto;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  transform: translate(14px, 14px);
 }
 
 .hover-time {

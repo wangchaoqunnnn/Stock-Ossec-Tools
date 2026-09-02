@@ -178,6 +178,51 @@ class RankingsService(object):
         return result
 
     # ------------------------------------------------------------------
+    # 个股资金流向
+    # ------------------------------------------------------------------
+    def stock_flow(self, limit: int = 20) -> List[dict]:
+        """个股主力资金净流入排名（按净流入降序）。"""
+        limit = max(5, min(50, int(limit or 20)))
+        key = "stockflow:%d" % limit
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        try:
+            payload = _get(
+                self._CLIST_API,
+                {
+                    "pn": 1,
+                    "pz": limit,
+                    "po": 1,
+                    "np": 1,
+                    "fltt": "2",
+                    "invt": "2",
+                    "fid": "f62",
+                    "fs": self._A_SHARE_FS,
+                    "fields": "f12,f14,f2,f3,f62,f184",
+                },
+            )
+        except DataSourceError:
+            return []
+
+        diff = (((payload or {}).get("data") or {}).get("diff")) or []
+        result = []
+        for row in diff:
+            result.append(
+                {
+                    "code": str(row.get("f12") or ""),
+                    "name": str(row.get("f14") or ""),
+                    "price": _num(row.get("f2")),
+                    "pct": _num(row.get("f3")),
+                    "net_inflow": _num(row.get("f62")),
+                    "net_ratio": _num(row.get("f184")),
+                }
+            )
+        self._cache.set(key, result)
+        return result
+
+    # ------------------------------------------------------------------
     # 股票榜单
     # ------------------------------------------------------------------
     _RANK_KINDS = {

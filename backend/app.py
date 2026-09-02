@@ -144,6 +144,16 @@ def concept_flow():
     return ok(data)
 
 
+@app.route("/api/rankings/stock-flow")
+def stock_flow():
+    try:
+        limit = max(5, min(50, int(request.args.get("limit", "20"))))
+    except ValueError:
+        limit = 20
+    data = rankings.stock_flow(limit)
+    return ok(data)
+
+
 @app.route("/api/rankings/top")
 def stock_rank():
     sort = request.args.get("type", "gainers")
