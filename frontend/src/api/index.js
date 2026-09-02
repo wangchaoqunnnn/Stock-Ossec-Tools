@@ -60,8 +60,4 @@ export const fetchMarketBreadth = () => request('api/rankings/market-breadth')
 
 export const fetchIndustryFlow = (limit = 20) => request('api/rankings/industry-flow', { limit })
 
-export const fetchConceptFlow = (limit = 20) => request('api/rankings/concept-flow', { limit })
-
-export const fetchFlowMinute = (code, market = '90') => request('api/rankings/flow-minute', { code, market })
-
 export const fetchStockRank = (type = 'gainers', limit = 20) => request('api/rankings/top', { type, limit })
