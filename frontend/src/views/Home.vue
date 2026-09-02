@@ -1,5 +1,43 @@
 <script setup>
+import { ref } from 'vue'
+import { fetchIndices } from '../api'
+import { useAutoRefresh } from '../composables/useAutoRefresh'
+
 const emit = defineEmits(['navigate'])
+
+// 首页指数速览：实时拉取 A 股主要指数，每 15 秒自动刷新
+const SHOWN_INDICES = ['上证指数', '深证成指', '创业板指', '科创50']
+const homeStats = ref(
+  SHOWN_INDICES.map((name) => ({ name, value: '--', changeText: '--', up: true, loaded: false }))
+)
+
+async function loadHomeIndices() {
+  try {
+    const data = await fetchIndices('cn')
+    const items = (data && data.items) || []
+    const map = {}
+    items.forEach((it) => { map[it.name] = it })
+    homeStats.value = SHOWN_INDICES.map((name) => {
+      const it = map[name]
+      if (!it || it.now === null || it.now === undefined) {
+        const prev = homeStats.value.find((s) => s.name === name)
+        return prev || { name, value: '--', changeText: '--', up: true, loaded: false }
+      }
+      const pctVal = Number(it.change_pct) || 0
+      return {
+        name,
+        value: Number(it.now).toFixed(2),
+        changeText: `${pctVal > 0 ? '+' : ''}${pctVal.toFixed(2)}%`,
+        up: pctVal >= 0,
+        loaded: true,
+      }
+    })
+  } catch (e) {
+    // 加载失败保留上一次数据（避免闪断），后端不可用时显示占位
+  }
+}
+
+useAutoRefresh(loadHomeIndices, 15000)
 
 const modules = [
   {
@@ -38,13 +76,6 @@ const modules = [
     color: '#ff922b',
   },
 ]
-
-const quickStats = [
-  { label: '上证指数', value: '3979.89', change: '-0.16%', up: false },
-  { label: '深证成指', value: '13872.38', change: '-1.02%', up: false },
-  { label: '创业板指', value: '3393.43', change: '-1.32%', up: false },
-  { label: '科创50', value: '1647.53', change: '-2.19%', up: false },
-]
 </script>
 
 <template>
@@ -57,10 +88,10 @@ const quickStats = [
         <p class="hero-desc">免登录 · 免费 · 纯只读展示的股票行情查询与分析工具</p>
       </div>
       <div class="hero-stats">
-        <div v-for="stat in quickStats" :key="stat.label" class="stat-item">
-          <div class="stat-label">{{ stat.label }}</div>
+        <div v-for="stat in homeStats" :key="stat.name" class="stat-item">
+          <div class="stat-label">{{ stat.name }}</div>
           <div class="stat-value num">{{ stat.value }}</div>
-          <div class="stat-change num" :class="stat.up ? 'up' : 'down'">{{ stat.change }}</div>
+          <div class="stat-change num" :class="stat.up ? 'up' : 'down'">{{ stat.changeText }}</div>
         </div>
       </div>
     </section>

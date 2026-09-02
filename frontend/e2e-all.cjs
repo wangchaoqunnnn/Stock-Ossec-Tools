@@ -222,8 +222,12 @@ async function main() {
     // ================= 4. 主要指数 =================
     for (const m of [{ label: 'A股', expect: '上证指数' }, { label: '亚太', expect: '恒生指数' }, { label: '美股', expect: '道琼斯' }, { label: '期货', expect: '沪深300股指' }]) {
       const ok = await clickByText(page, '.ant-radio-button-wrapper', m.label);
-      await sleep(3000);
-      const found = await page.evaluate((txt) => document.body.textContent.includes(txt), m.expect);
+      let found = false
+      for (let i = 0; i < 12; i++) {
+        await sleep(500)
+        found = await page.evaluate((txt) => document.body.textContent.includes(txt), m.expect)
+        if (found) break
+      }
       record(`指数市场「${m.label}」切换显示${m.expect}`, ok && found);
     }
     const sw = await page.$('.ant-switch');

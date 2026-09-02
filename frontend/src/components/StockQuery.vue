@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { searchStocks, fetchQuote } from '../api'
 import { trendClass, signed, pct, num, mv, volume } from '../utils/format'
@@ -365,15 +365,47 @@ async function loadQuote(code) {
     const data = await fetchQuote(c)
     quote.value = data
     checkWatchlist(c)
+    startQuoteAutoRefresh() // 展示后进入实时刷新
   } catch (e) {
     quote.value = null
+    stopQuoteAutoRefresh()
     message.error(e.message)
   } finally {
     quoteLoading.value = false
   }
 }
 
+// 已展示的个股行情定时刷新（15s），保证价格实时更新
+const QUOTE_REFRESH_MS = 15000
+let quoteRefreshTimer = null
+
+function startQuoteAutoRefresh() {
+  stopQuoteAutoRefresh()
+  if (!quote.value || !quote.value.code) return
+  quoteRefreshTimer = setInterval(async () => {
+    const code = quote.value && quote.value.code
+    if (!code) return
+    try {
+      const data = await fetchQuote(code)
+      // 防竞态：仅当当前展示的还是同一只股票时更新
+      if (quote.value && quote.value.code === code) {
+        quote.value = data
+      }
+    } catch (e) {
+      // 静默失败，保留旧数据，下轮重试
+    }
+  }, QUOTE_REFRESH_MS)
+}
+
+function stopQuoteAutoRefresh() {
+  if (quoteRefreshTimer) {
+    clearInterval(quoteRefreshTimer)
+    quoteRefreshTimer = null
+  }
+}
+
 onMounted(() => loadQuote('600519'))
+onUnmounted(stopQuoteAutoRefresh)
 </script>
 
 <template>

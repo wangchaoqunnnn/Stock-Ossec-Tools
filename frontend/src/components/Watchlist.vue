@@ -315,8 +315,9 @@ function fmtSpeed(v) {
 onMounted(() => {
   loadStorage()
   refreshQuotes()
-  refreshTimer = setInterval(refreshQuotes, 60000)
+  refreshTimer = setInterval(refreshQuotes, 30000)
   window.addEventListener('watchlist-changed', onWatchlistChanged)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 function onWatchlistChanged() {
@@ -324,10 +325,16 @@ function onWatchlistChanged() {
   refreshQuotes()
 }
 
+// 页面从后台切回时立即刷新行情
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible') refreshQuotes()
+}
+
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
   if (searchTimer) clearTimeout(searchTimer)
   window.removeEventListener('watchlist-changed', onWatchlistChanged)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 

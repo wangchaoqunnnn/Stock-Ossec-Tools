@@ -17,9 +17,8 @@ const source = ref('')
 const sourceLabel = { eastmoney: '东方财富', tencent: '腾讯行情' }
 const autoRefresh = ref(true)
 const lastUpdate = ref('')
-const countdown = ref(60)
+const AUTO_REFRESH_MS = 15000
 let refreshTimer = null
-let countdownTimer = null
 
 async function load(market) {
   loading.value = true
@@ -28,9 +27,8 @@ async function load(market) {
     items.value = data.items || []
     source.value = data.source || ''
     lastUpdate.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-    countdown.value = 60
   } catch (e) {
-    items.value = []
+    // 保留上一次数据，避免刷新失败导致面板闪空
     message.error(`指数加载失败：${e.message}`)
   } finally {
     loading.value = false
@@ -44,12 +42,11 @@ function switchMarket(key) {
 
 function toggleAutoRefresh(checked) {
   // v-model:checked 已更新 autoRefresh，这里只负责启停定时器
-  // （不要再翻转 autoRefresh，否则与 v-model 双重取反导致开关无效）
   if (checked) {
-    countdown.value = 60
-    startTimers()
+    load(active.value)
+    startTimer()
   } else {
-    stopTimers()
+    stopTimer()
   }
 }
 
@@ -57,34 +54,36 @@ function manualRefresh() {
   load(active.value)
 }
 
-function startTimers() {
-  stopTimers()
-  countdownTimer = setInterval(() => {
-    countdown.value = Math.max(0, countdown.value - 1)
-    if (countdown.value <= 0 && autoRefresh.value) {
-      load(active.value)
-    }
-  }, 1000)
+function startTimer() {
+  stopTimer()
+  refreshTimer = setInterval(() => {
+    if (autoRefresh.value) load(active.value)
+  }, AUTO_REFRESH_MS)
 }
 
-function stopTimers() {
+function stopTimer() {
   if (refreshTimer) {
     clearInterval(refreshTimer)
     refreshTimer = null
   }
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
+}
+
+// 页面从后台切回时立即刷新，避免切回时看到过期数据
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible' && autoRefresh.value) {
+    load(active.value)
   }
 }
 
 onMounted(() => {
   load('cn')
-  if (autoRefresh.value) startTimers()
+  if (autoRefresh.value) startTimer()
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onUnmounted(() => {
-  stopTimers()
+  stopTimer()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 
@@ -103,8 +102,8 @@ onUnmounted(() => {
         <a-switch
           v-model:checked="autoRefresh"
           size="small"
-          checked-children="60s"
-          un-checked-children="关闭"
+          checked-children="自动"
+          un-checked-children="手动"
           @change="toggleAutoRefresh"
         />
         <a-button size="small" :loading="loading" @click="manualRefresh">
