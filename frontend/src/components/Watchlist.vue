@@ -75,20 +75,23 @@ const mergedList = computed(() => {
   return list
 })
 
-// 信号计算
+// 信号计算：按中国用户习惯分类（红=买入/强势、绿=卖出/弱势、灰=观望）
+// 返回 { text, category }，category: 'buy' | 'sell' | 'hold'
 function computeSignal(q) {
-  if (!q || q.now_price === null || q.now_price === undefined) return { text: '--', type: 'default' }
+  if (!q || q.now_price === null || q.now_price === undefined) return { text: '--', category: 'hold' }
   const pctVal = q.change_pct || 0
   const speed = q.speed || 0
   const vr = q.volume_ratio || 0
-  if (pctVal >= 7 && vr >= 2) return { text: '强势涨停', type: 'error' }
-  if (pctVal >= 5 && speed >= 0.5) return { text: '强势拉升', type: 'error' }
-  if (pctVal >= 3) return { text: '偏强', type: 'warning' }
-  if (pctVal <= -7) return { text: '大跌', type: 'success' }
-  if (pctVal <= -3) return { text: '偏弱', type: 'success' }
-  if (speed >= 1) return { text: '快速拉升', type: 'warning' }
-  if (speed <= -1) return { text: '快速下跌', type: 'success' }
-  return { text: '观望', type: 'default' }
+  // 买入/强势信号
+  if (pctVal >= 7 && vr >= 2) return { text: '买入', category: 'buy' } // 强势涨停
+  if (pctVal >= 5 && speed >= 0.5) return { text: '买入', category: 'buy' } // 强势拉升
+  if (pctVal >= 3) return { text: '买入', category: 'buy' } // 偏强
+  if (speed >= 1) return { text: '买入', category: 'buy' } // 快速拉升
+  // 卖出/弱势信号
+  if (pctVal <= -7) return { text: '卖出', category: 'sell' } // 大跌
+  if (pctVal <= -3) return { text: '卖出', category: 'sell' } // 偏弱
+  if (speed <= -1) return { text: '卖出', category: 'sell' } // 快速下跌
+  return { text: '观望', category: 'hold' }
 }
 
 // 加载本地存储
@@ -463,7 +466,7 @@ onUnmounted(() => {
               </td>
               <td v-if="visibleColumns.find((c) => c.key === 'amount')" class="num">{{ mv(item.amount) }}</td>
               <td v-if="visibleColumns.find((c) => c.key === 'signal')">
-                <a-tag :color="item.signal.type" size="small">{{ item.signal.text }}</a-tag>
+                <span class="signal-badge" :class="`signal-${item.signal.category}`">{{ item.signal.text }}</span>
               </td>
               <td v-if="visibleColumns.find((c) => c.key === 'remark')" class="remark-cell">
                 <template v-if="editingCode === item.code">
@@ -634,6 +637,32 @@ onUnmounted(() => {
 .col-action {
   width: 70px;
   text-align: center;
+}
+
+/* 信号徽章：与网页配色一致的高对比颜色（红=买入 绿=卖出 灰=观望） */
+.signal-badge {
+  display: inline-block;
+  padding: 1px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.signal-buy {
+  color: #ff6b7a;
+  background: rgba(255, 77, 94, 0.12);
+  border: 1px solid rgba(255, 77, 94, 0.5);
+}
+.signal-sell {
+  color: #00d9a4;
+  background: rgba(0, 197, 142, 0.12);
+  border: 1px solid rgba(0, 197, 142, 0.5);
+}
+.signal-hold {
+  color: #c6c6da;
+  background: rgba(154, 154, 180, 0.12);
+  border: 1px solid rgba(154, 154, 180, 0.4);
 }
 .empty-state {
   padding: 48px 20px;
