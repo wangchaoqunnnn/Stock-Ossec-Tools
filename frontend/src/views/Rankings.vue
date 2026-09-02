@@ -16,7 +16,6 @@ const activeTopTab = ref('fundflow')
 const fundSubTabs = [
   { key: 'industry', label: '行业' },
   { key: 'concept', label: '概念' },
-  { key: 'stock', label: '个股' },
 ]
 const activeFundSubTab = ref('industry')
 
@@ -198,7 +197,6 @@ function handleChartMouseMove(event, type) {
 fetchMarketBreadth()
 fetchIndustryFlow()
 fetchConceptFlow()
-fetchStockFlow()
 
 // 选中的行业（用数组代替Set）
 const selectedIndustryNames = ref([])
@@ -394,27 +392,6 @@ function buildPath(points, width, height, minVal, maxVal) {
 const chartMin = -90
 const chartMax = 90
 
-// ========== 个股资金流向 ==========
-const stocks = ref([])
-
-async function fetchStockFlow() {
-  try {
-    const res = await fetch('/api/rankings/stock-flow?limit=30')
-    const data = await res.json()
-    if (data.code === 0 && data.data && data.data.length > 0) {
-      stocks.value = data.data.map((item) => ({
-        code: item.code,
-        market: String(item.code).startsWith('6') || String(item.code).startsWith('9') ? '1' : '0',
-        name: item.name,
-        net: parseFloat((item.net_inflow / 100000000).toFixed(2)), // 转换为亿元
-        change: item.pct,
-      }))
-    }
-  } catch (e) {
-    console.error('获取个股资金流失败:', e)
-  }
-}
-
 // ========== 分钟级资金流 ==========
 const selectedFlow = ref(null) // { code, market, name }
 const minuteFlow = ref([])
@@ -425,7 +402,6 @@ function switchFundSubTab(key) {
   // 切换子标签时默认展示该分类第一项的分钟资金流
   if (key === 'industry' && industries.value.length) fetchFlowMinute(industries.value[0])
   else if (key === 'concept' && concepts.value.length) fetchFlowMinute(concepts.value[0])
-  else if (key === 'stock' && stocks.value.length) fetchFlowMinute(stocks.value[0])
 }
 
 async function fetchFlowMinute(item) {
@@ -1621,80 +1597,6 @@ function refresh() {
         </div>
       </div>
 
-      <!-- 个股内容 -->
-      <div v-else-if="activeFundSubTab === 'stock'" class="stock-view">
-        <div class="info-bar">
-          <div class="info-left">
-            <span class="info-count">共 {{ stocks.length }} 只个股</span>
-            <span class="info-time">更新于 {{ lastUpdate }}</span>
-          </div>
-          <div class="info-right">
-            <button class="refresh-btn" @click="refresh">
-              <span class="refresh-icon">↻</span> 刷新
-            </button>
-          </div>
-        </div>
-
-        <div class="ranking-panel">
-          <div class="panel-title">个股主力净流入排名（点击查看分钟资金流）</div>
-          <div class="ranking-list">
-            <div
-              v-for="(s, idx) in stocks"
-              :key="s.code || s.name"
-              class="ranking-item"
-              :class="{ selected: selectedFlow && selectedFlow.code === s.code }"
-              @click="fetchFlowMinute(s)"
-            >
-              <span class="rank-num" :class="idx < 3 ? 'top' : ''">{{ idx + 1 }}</span>
-              <span class="rank-name">{{ s.name }} <span style="color:#64748b;font-size:11px;" class="num">{{ s.code }}</span></span>
-              <span class="rank-change" :class="s.change >= 0 ? 'up' : 'down'">{{ s.change >= 0 ? '+' : '' }}{{ s.change }}%</span>
-              <span class="rank-net" :class="s.net >= 0 ? 'up' : 'down'">{{ s.net >= 0 ? '+' : '' }}{{ s.net }}亿</span>
-              <span class="rank-arrow">›</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 分时资金流（分钟级） -->
-        <div class="chart-panel">
-          <div class="chart-header">
-            <div>
-              <span class="chart-title">分时主力净流入（分钟级）</span>
-              <span class="chart-note" v-if="selectedFlow">{{ selectedFlow.name }} · 红=净流入，绿=净流出</span>
-            </div>
-          </div>
-          <div class="chart-body">
-            <div class="chart-container">
-              <svg viewBox="0 0 1000 350" class="trend-chart" preserveAspectRatio="none" @mousemove="handleMinuteMouseMove" @mouseleave="minuteHover = null">
-                <g stroke="rgba(255,255,255,0.08)" stroke-width="1">
-                  <line x1="0" y1="0" x2="1000" y2="0" />
-                  <line x1="0" y1="87.5" x2="1000" y2="87.5" />
-                  <line x1="0" y1="175" x2="1000" y2="175" />
-                  <line x1="0" y1="262.5" x2="1000" y2="262.5" />
-                  <line x1="0" y1="350" x2="1000" y2="350" />
-                </g>
-                <line x1="0" y1="175" x2="1000" y2="175" stroke="rgba(255,255,255,0.3)" stroke-width="1" stroke-dasharray="4,2" />
-                <g v-for="(b, i) in minuteBars()" :key="i">
-                  <rect v-if="b.up" :x="b.x - b.w / 2" :y="175 - b.h" :width="b.w" :height="b.h" fill="#ff4d5e" opacity="0.85" />
-                  <rect v-else :x="b.x - b.w / 2" :y="175" :width="b.w" :height="b.h" fill="#00c58e" opacity="0.85" />
-                </g>
-              </svg>
-            </div>
-            <div class="x-axis-labels">
-              <span>09:30</span><span>10:30</span><span>11:30/13:00</span><span>14:00</span><span>15:00</span>
-            </div>
-            <div v-if="minuteHover" class="hover-tooltip" :style="{ left: minuteHover.x + 'px', top: minuteHover.y + 'px' }">
-              <div class="hover-time">{{ minuteHover.time }}</div>
-              <div class="hover-list">
-                <div class="hover-item">
-                  <span class="hover-dot" :style="{ background: minuteHover.up ? '#ff4d5e' : '#00c58e' }"></span>
-                  <span class="hover-name">主力净流入</span>
-                  <span class="hover-value" :class="minuteHover.up ? 'up' : 'down'">{{ minuteHover.net >= 0 ? '+' : '' }}{{ (minuteHover.net / 100000000).toFixed(2) }}亿</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- 市场情绪内容 -->
