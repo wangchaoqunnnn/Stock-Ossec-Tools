@@ -17,6 +17,7 @@ from flask_cors import CORS
 from services.eastmoney import EastMoneyService
 from services.rankings import RankingsService
 from services.kline import KlineService
+from services.scorer import StockScorer
 
 try:  # python -m backend.app（项目根目录运行）
     from backend import config
@@ -32,6 +33,7 @@ logger = logging.getLogger("stock-ossec-tools")
 service = EastMoneyService()
 rankings = RankingsService()
 kline = KlineService()
+scorer = StockScorer()
 
 
 def ok(data=None, message="ok"):
@@ -225,6 +227,21 @@ def stock_indicators():
         return fail("指标数据暂时不可用，请稍后重试", code=503, status=503)
     if data is None:
         return fail("历史K线数据不足，暂无法计算指标", code=404, status=404)
+    return ok(data)
+
+
+@app.route("/api/stock/score")
+def stock_score():
+    """个股六维打分：基础面/板块/技术面/短线情绪/买点/综合。"""
+    code = request.args.get("code", "").strip()
+    if not _valid_code(code):
+        return fail("股票代码格式不正确，应为 6 位数字", code=400, status=400)
+    try:
+        data = scorer.score(code)
+    except Exception:
+        return fail("打分服务暂时不可用，请稍后重试", code=503, status=503)
+    if data is None:
+        return fail("未查询到该股票行情，请检查代码是否正确", code=404, status=404)
     return ok(data)
 
 

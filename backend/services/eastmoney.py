@@ -245,7 +245,7 @@ class EastMoneyService(object):
         return results
 
     def _search_codetable(self, keyword: str, count: int) -> List[dict]:
-        """优先使用的检索接口（返回结构稳定）。"""
+        """优先使用的检索接口（返回结构稳定，含拼音字段）。"""
         try:
             payload = _get(
                 config.EASTMONEY_CODETABLE_API,
@@ -255,19 +255,29 @@ class EastMoneyService(object):
             return []
 
         rows = (payload or {}).get("result") or []
+        kw = keyword.strip().lower()
         results = []
         for row in rows:
             type_name = str(row.get("securityTypeName") or "")
             code = str(row.get("code") or "")
             name = str(row.get("shortName") or "")
+            pinyin = str(row.get("pinyin") or "")
             if type_name not in self._A_SHARE_TYPES or not code or not name:
                 continue
+            # 支持代码 / 名称 / 中文拼音首字母检索
+            if kw.isascii():
+                if not (kw in code.lower() or pinyin.lower().startswith(kw)):
+                    continue
+            else:
+                if not (kw in name.lower() or kw in code.lower()):
+                    continue
             market = row.get("market")
             market = str(market) if market is not None else ""
             results.append(
                 {
                     "code": code,
                     "name": name,
+                    "pinyin": pinyin,
                     "market_type": market,
                     "security_type": type_name,
                     "quote_id": "%s.%s" % (market, code),

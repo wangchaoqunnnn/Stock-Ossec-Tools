@@ -63,9 +63,9 @@ const modules = [
   },
   {
     key: 'portfolio',
-    icon: '💼',
-    title: '投资组合',
-    desc: '跟踪公开组合收益、持仓状态与策略表现',
+    icon: '✩',
+    title: '个股打分',
+    desc: '六维智能打分（基础面/板块/技术面/短线情绪/买点），给出买卖建议',
     color: '#51cf66',
   },
   {

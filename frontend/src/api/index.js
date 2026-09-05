@@ -54,6 +54,8 @@ export const fetchMinute = (code) => request('api/stock/minute', { code })
 
 export const fetchIndicators = (code, period = 'day') => request('api/stock/indicators', { code, period })
 
+export const fetchStockScore = (code) => request('api/stock/score', { code })
+
 export const fetchBatchQuotes = (codes) => request('api/stock/batch', { codes: codes.join(',') })
 
 export const fetchMarketBreadth = () => request('api/rankings/market-breadth')

@@ -23,7 +23,7 @@ const views = {
 
 const navItems = [
   { key: 'home', label: '首页', icon: '⌂' },
-  { key: 'portfolio', label: '组合', icon: '◈' },
+  { key: 'portfolio', label: '打分', icon: '✩' },
   { key: 'tools', label: '工具', icon: '⚙' },
   { key: 'rankings', label: '行情', icon: '📈' },
   { key: 'community', label: '复盘', icon: '▤' },
@@ -31,7 +31,7 @@ const navItems = [
 
 const pageTitles = {
   home: '首页',
-  portfolio: '投资组合',
+  portfolio: '个股打分',
   tools: '个股查询',
   utility: '量化工具',
   rankings: '行情中枢',
