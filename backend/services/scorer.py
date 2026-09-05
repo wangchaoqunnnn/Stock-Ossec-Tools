@@ -287,6 +287,10 @@ class StockScorer(object):
         batch = self._em.get_batch_quotes([code])
         row = batch[0] if batch else {}
         industry = row.get("industry") or ""
+        if not industry:
+            # 主源（push2）不可达、批量行情回退腾讯时无行业字段：
+            # 依次尝试 push2delay f100 / 东财 F10 所属板块报告补全所属行业。
+            industry = self._em.resolve_industry(code)
         speed = row.get("speed")
         for k in ("pe", "pb", "turnover", "volume_ratio"):
             if quote.get(k) is None:

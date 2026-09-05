@@ -21,6 +21,12 @@ UPSTREAM_TIMEOUT = 8
 # 东方财富公开接口
 EASTMONEY_QUOTE_API = "https://push2.eastmoney.com/api/qt/stock/get"
 EASTMONEY_ULIST_API = "https://push2.eastmoney.com/api/qt/ulist.np/get"
+# 东财备用行情主机：主 push2 不可达时回退（数据延迟数分钟，板块归属/行业名与主源同口径）
+EASTMONEY_ULIST_API_DELAY = "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
+EASTMONEY_CLIST_API = "https://push2.eastmoney.com/api/qt/clist/get"
+EASTMONEY_CLIST_API_DELAY = "https://push2delay.eastmoney.com/api/qt/clist/get"
+# 东财 F10 核心题材-所属板块报告（datacenter，稳定可用；行业归属取二级行业名，与 push2 f100 同口径）
+EASTMONEY_F10_BOARDTYPE_API = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 EASTMONEY_SEARCH_API = "https://searchapi.eastmoney.com/api/suggest/get"
 EASTMONEY_CODETABLE_API = "https://search-codetable.eastmoney.com/codetable/search/web"
 EASTMONEY_SEARCH_TOKEN = "D43BF722C8E33BDC906FB84D85E326E8"

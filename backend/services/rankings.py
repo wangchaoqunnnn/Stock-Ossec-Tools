@@ -115,7 +115,24 @@ class RankingsService(object):
                 },
             )
         except DataSourceError:
-            return []
+            # 主 push2 不可达时回退备用主机（数据延迟数分钟，板块名单口径一致）
+            try:
+                payload = _get(
+                    config.EASTMONEY_CLIST_API_DELAY,
+                    {
+                        "pn": 1,
+                        "pz": limit,
+                        "po": 1,
+                        "np": 1,
+                        "fltt": "2",
+                        "invt": "2",
+                        "fid": "f62",
+                        "fs": self._INDUSTRY_FS,
+                        "fields": "f12,f14,f2,f3,f62,f184",
+                    },
+                )
+            except DataSourceError:
+                return []
 
         diff = (((payload or {}).get("data") or {}).get("diff")) or []
         result = []

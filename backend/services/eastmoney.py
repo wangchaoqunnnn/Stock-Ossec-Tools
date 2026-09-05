@@ -119,6 +119,18 @@ class EastMoneyService(object):
         return "0.%s" % code
 
     @staticmethod
+    def _code_to_emcode(code: str) -> Optional[str]:
+        """A 股代码 -> 东财 SECUCODE（如 600519.SH / 000938.SZ / 8xxxxx.BJ）。"""
+        code = str(code).strip()
+        if not code:
+            return None
+        if code.startswith(("6", "9")):
+            return "%s.SH" % code
+        if code.startswith(("4", "8")):
+            return "%s.BJ" % code
+        return "%s.SZ" % code
+
+    @staticmethod
     def _code_to_tencent(code: str) -> Optional[str]:
         """A 股代码转换为腾讯行情代码（sh/sz/bj 前缀）。"""
         code = str(code).strip()
@@ -529,6 +541,78 @@ class EastMoneyService(object):
         data = data if data is not None else []
         self._cache.set(key, data)
         return data
+
+    # ------------------------------------------------------------------
+    # 所属行业解析（个股 -> 二级行业名，与资金流板块名单同口径）
+    # ------------------------------------------------------------------
+    def resolve_industry(self, code: str) -> str:
+        """解析个股所属行业（二级行业名，如「白酒Ⅱ」「保险Ⅱ」「电池」）。
+
+        仅在批量行情未携带行业字段（主 push2 不可达、回退腾讯）时启用：
+          1. 东财备用行情主机 push2delay 的 ulist f100（同口径，数据延迟数分钟）；
+          2. 东财 F10 datacenter 所属板块报告：取 BOARD_TYPE=行业 的二级（L2）行业名。
+
+        全部失败返回空串，由调用方降级处理（给中性分）。
+        """
+        code = str(code or "").strip()
+        if not code:
+            return ""
+        key = "ind:%s" % code
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        industry = self._industry_from_delay_ulist(code) or self._industry_from_f10(code)
+        self._cache.set(key, industry or "")
+        return industry or ""
+
+    def _industry_from_delay_ulist(self, code: str) -> str:
+        secid = self._code_to_secid(code)
+        if not secid:
+            return ""
+        try:
+            payload = _get(
+                config.EASTMONEY_ULIST_API_DELAY,
+                {"secids": secid, "fields": "f12,f100", "fltt": "2", "invt": "2"},
+            )
+        except DataSourceError:
+            return ""
+        diff = ((payload or {}).get("data") or {}).get("diff") or []
+        if not isinstance(diff, list):
+            diff = [diff]
+        for row in diff:
+            if str(row.get("f12") or "") == code:
+                return str(row.get("f100") or "").strip()
+        return ""
+
+    def _industry_from_f10(self, code: str) -> str:
+        secucode = self._code_to_emcode(code)
+        if not secucode:
+            return ""
+        try:
+            payload = _get(
+                config.EASTMONEY_F10_BOARDTYPE_API,
+                {
+                    "reportName": "RPT_F10_CORETHEME_BOARDTYPE",
+                    "columns": "SECUCODE,BOARD_CODE,BOARD_NAME,BOARD_TYPE,BOARD_LEVEL,BOARD_RANK",
+                    "filter": '(SECUCODE="%s")' % secucode,
+                    "pageSize": 100,
+                    "pageNumber": 1,
+                    "source": "HSF10",
+                    "client": "PC",
+                },
+            )
+        except DataSourceError:
+            return ""
+        rows = (((payload or {}).get("result") or {}).get("data")) or []
+        industry_rows = [r for r in rows if (r.get("BOARD_TYPE") or "") == "行业"]
+        for level in (2, 1, 3):
+            for r in industry_rows:
+                if r.get("BOARD_LEVEL") == level:
+                    name = str(r.get("BOARD_NAME") or "").strip()
+                    if name:
+                        return name
+        return ""
 
     def _batch_eastmoney(self, codes: List[str]) -> List[dict]:
         secids = ",".join(self._code_to_secid(c) for c in codes)
