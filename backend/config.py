@@ -3,11 +3,14 @@
 
 import os
 
-# 基础路径
+# 基础路径（由本文件位置推导，非写死的绝对路径）
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 前端构建产物目录（生产模式静态托管）
-FRONTEND_DIST = os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "dist"))
+# 前端构建产物目录（生产模式静态托管）。
+# 默认取仓库内 frontend/dist；可通过环境变量 FRONTEND_DIST 覆盖（部署到其它目录时）
+FRONTEND_DIST = os.environ.get("FRONTEND_DIST") or os.path.abspath(
+    os.path.join(BASE_DIR, "..", "frontend", "dist")
+)
 
 # 上游行情缓存时间（秒）
 CACHE_TTL = 10

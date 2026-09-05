@@ -366,4 +366,10 @@ def static_files(path):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    # 监听地址与端口可用环境变量 HOST / PORT 覆盖（避免写死）
+    host = os.environ.get("HOST", "0.0.0.0")
+    try:
+        port = int(os.environ.get("PORT", "5000"))
+    except ValueError:
+        port = 5000
+    app.run(host=host, port=port, debug=False)

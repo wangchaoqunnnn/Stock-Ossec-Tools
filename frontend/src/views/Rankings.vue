@@ -44,7 +44,7 @@ const industries = ref([])
 // 从API获取市场涨跌分布数据
 async function fetchMarketBreadth() {
   try {
-    const res = await fetch('/api/rankings/market-breadth')
+    const res = await fetch('api/rankings/market-breadth')
     const data = await res.json()
     if (data.code === 0 && data.data) {
       const d = data.data
@@ -76,7 +76,7 @@ async function fetchMarketBreadth() {
 // 从API获取行业资金流数据
 async function fetchIndustryFlow() {
   try {
-    const res = await fetch('/api/rankings/industry-flow?limit=30')
+    const res = await fetch('api/rankings/industry-flow?limit=30')
     const data = await res.json()
     if (data.code === 0 && data.data && data.data.length > 0) {
       const colors = ['#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e']
@@ -259,7 +259,7 @@ const concepts = ref([])
 // 从API获取概念资金流数据
 async function fetchConceptFlow() {
   try {
-    const res = await fetch('/api/rankings/concept-flow?limit=30')
+    const res = await fetch('api/rankings/concept-flow?limit=30')
     const data = await res.json()
     if (data.code === 0 && data.data && data.data.length > 0) {
       const colors = ['#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e']
@@ -409,7 +409,7 @@ async function fetchFlowMinute(item) {
   selectedFlow.value = item
   minuteFlowLoading.value = true
   try {
-    const res = await fetch(`/api/rankings/flow-minute?code=${item.code}&market=${item.market || '90'}`)
+    const res = await fetch(`api/rankings/flow-minute?code=${item.code}&market=${item.market || '90'}`)
     const data = await res.json()
     minuteFlow.value = (data.code === 0 && data.data) ? data.data : []
   } catch (e) {
@@ -786,7 +786,7 @@ const newsList = ref([])
 // 从API获取7x24新闻数据
 async function fetchNews7x24() {
   try {
-    const res = await fetch('/api/news/7x24?page=1&page_size=20')
+    const res = await fetch('api/news/7x24?page=1&page_size=20')
     const data = await res.json()
     if (data.code === 0 && data.data) {
       newsList.value = data.data.map((item, idx) => ({
