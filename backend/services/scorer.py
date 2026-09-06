@@ -317,49 +317,89 @@ class StockScorer(object):
 
         # 操作建议
         can_buy = composite >= 60 and bs >= 55 and (ts >= 50 or es >= 60)
+        ma20v = None
+        ma60v = None
+        if day and day.get("indicators", {}).get("ma", {}):
+            _ma = day["indicators"]["ma"]
+            ma20v = _ma.get("ma20")
+            ma60v = _ma.get("ma60")
         advice_lines: List[str] = []
         if can_buy:
             advice_lines.append("综合打分 %.1f、买点打分 %.1f，当前技术/买点条件成立，可少量买入或分批建仓" % (composite, bs))
             advice_lines.append("策略：现价附近轻仓试仓；跌破短线支撑（MA20/近期低点）止损观察。")
         else:
             advice_lines.append("综合打分 %.1f、买点打分 %.1f，当前时刻不具备良好买点，暂不建议追入" % (composite, bs))
+            if ma20v is not None and price is not None and price < ma20v:
+                # 直接回应「股价已很低，现在买是否更划算」的疑问
+                advice_lines.append(
+                    "现价已低于 MA20（%.2f）、处于下行趋势：价位低 ≠ 买点到位，"
+                    "下跌途中不要因“更便宜”就市价抄底；应等待放量止跌企稳或收复 MA20 后的右侧信号"
+                    % round(ma20v, 2)
+                )
         if ts <= 45:
             advice_lines.append("技术面偏弱（%.1f），下行趋势未扭转前以观望为主" % ts)
         if es <= 40:
             advice_lines.append("短线情绪低迷（%.1f），不宜抢反弹" % es)
 
+        # 等待买点：只有位于现价下方的参考位才是“回踩低吸/观察位”；
+        # 高于现价的均线（MA20/MA60）是上方压力/套牢区，属“趋势修复位”，需放量收复站稳后才有效。
         buy_points: List[dict] = []
         if not can_buy:
-            if short_support:
-                buy_points.append({
-                    "type": "超短",
-                    "price": short_support,
-                    "note": "回踩短线支撑（MA20/近期低点附近）企稳可低吸，跌破不接",
-                })
-            observe = observe_price if observe_price else short_support
-            if observe:
-                buy_points.append({
-                    "type": "短线",
-                    "price": observe,
-                    "note": "回调至观察位（短线支撑）放量企稳后分批介入",
-                })
-            ma60v = None
-            if day and day.get("indicators", {}).get("ma", {}).get("ma60"):
-                ma60v = day["indicators"]["ma"]["ma60"]
-            if ma60v:
-                buy_points.append({
-                    "type": "长线",
-                    "price": round(ma60v, 2),
-                    "note": "价值区参考（MA60 附近），适合分批定投式布局",
-                })
-            if break_price:
-                buy_points.append({
-                    "type": "突破",
-                    "price": break_price,
-                    "note": "放量突破近20日高点后确认趋势再加仓",
-                })
+            now = price
+            klines = (day or {}).get("kline") or []
+            lows20 = [r["low"] for r in klines[-20:] if r.get("low") is not None]
+            low20 = min(lows20) if lows20 else None
+
+            def _push(typ, p, note):
+                if p is None:
+                    return
+                p = round(float(p), 2)
+                if any(b["price"] == p for b in buy_points):
+                    return  # 同一价位只保留一条，避免“超短/短线”重复刷屏
+                above = now is not None and p >= now
+                buy_points.append({"type": typ, "price": p, "note": note, "above": bool(above)})
+
+            # —— 超短：现价下方的短线支撑 ——
+            ss = short_support
+            if ss is not None and now is not None and ss >= now:
+                ss = None  # MA20 在现价上方是压力位，不能当低吸支撑
+            if ss is None and low20 is not None and (now is None or low20 < now):
+                ss = low20  # 破位下行时改看近20日低点
+            _push("超短", ss, "回踩短线支撑（现价下方：MA20/近期低点附近）企稳可低吸，跌破不接")
+
+            # —— 短线观察位 ——
+            ob = observe_price
+            if ob is None:
+                ob = short_support
+            if ob is not None and now is not None and ob >= now:
+                ob = None
+            if ob is None and low20 is not None and (now is None or low20 < now):
+                ob = low20
+            _push("短线", ob, "回调至观察位（现价下方支撑）放量企稳后分批介入")
+
+            # —— 长线：MA60 在现价下方才是价值区；在上方为压力/趋势修复位 ——
+            if ma60v is not None:
+                if now is None or ma60v < now:
+                    _push("长线", ma60v,
+                          "MA60（%.2f）位于现价下方，属价值区，适合分批定投式布局" % round(ma60v, 2))
+                else:
+                    _push("长线", ma60v,
+                          "现价仍低于 MA60（%.2f），该位为上方压力/趋势修复位：放量收复并站稳后再考虑价值布局"
+                          % round(ma60v, 2))
+
+            # —— 突破确认（本来就在现价上方，属右侧追涨信号） ——
+            _push("突破", break_price, "放量突破近20日高点后确认趋势再加仓（该位在现价上方，属右侧信号，突破前不追）")
+
         if not buy_points:
-            buy_points.append({"type": "现价", "price": price, "note": "当前即可执行买入"})
+            if can_buy:
+                buy_points.append({"type": "现价", "price": price, "note": "当前即可执行买入", "above": False})
+            else:
+                buy_points.append({
+                    "type": "企稳",
+                    "price": price,
+                    "note": "暂无现价下方的参考支撑：等待放量止跌企稳后再考虑，现价不宜盲目抄底",
+                    "above": False,
+                })
 
         # 观察池策略：综合>=60 或 买点>=60 视为值得跟踪
         worth_track = composite >= 60 or bs >= 60

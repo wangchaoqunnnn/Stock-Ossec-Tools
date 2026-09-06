@@ -278,13 +278,17 @@ onMounted(loadPool)
 
         <!-- 买点 -->
         <div class="buypoint-card terminal-card">
-          <div class="panel-title">{{ result.can_buy ? '当前买点' : '等待买点（含长线 / 短线 / 超短）' }}</div>
+          <div class="panel-title">{{ result.can_buy ? '当前买点' : '等待买点（低吸参考 / 上方压力位）' }}</div>
           <div class="bp-list">
             <div v-for="(bp, i) in result.buy_points" :key="i" class="bp-item">
               <span class="bp-type">{{ bp.type }}</span>
               <span class="bp-price num">≈ {{ num(bp.price, 2) }}</span>
+              <span v-if="bp.above !== undefined" class="bp-rel" :class="bp.above ? 'rel-above' : 'rel-below'">{{ bp.above ? '现价上方·压力/修复位' : '现价下方' }}</span>
               <span class="bp-note">{{ bp.note }}</span>
             </div>
+          </div>
+          <div v-if="!result.can_buy && result.buy_points.some((b) => b.above)" class="bp-hint">
+            提示：标注「现价上方」的价位 <b>不是更低的买点</b>，而是上方压力/套牢区（趋势修复位）——需放量收复站稳后才有效；现价仍在下跌趋势中，“价格低”不等于“买点已到”，低吸请按「现价下方」的参考位执行。
           </div>
         </div>
 
@@ -464,7 +468,12 @@ onMounted(loadPool)
 .bp-item { display: flex; align-items: baseline; gap: 12px; padding: 8px 12px; background: var(--panel-2); border-radius: 8px; flex-wrap: wrap; }
 .bp-type { font-size: 12px; font-weight: 700; color: var(--accent); width: 60px; flex-shrink: 0; }
 .bp-price { font-size: 16px; font-weight: 700; width: 90px; flex-shrink: 0; }
-.bp-note { font-size: 12px; color: var(--text-2); flex: 1; min-width: 180px; }
+.bp-rel { font-size: 11px; padding: 1px 8px; border-radius: 8px; white-space: nowrap; }
+.rel-below { color: var(--accent); background: rgba(79,124,255,.12); }
+.rel-above { color: #f5a623; background: rgba(245,166,35,.12); }
+.bp-note { font-size: 12px; color: var(--text-2); flex: 1; min-width: 200px; }
+.bp-hint { margin-top: 10px; padding: 8px 12px; border: 1px dashed rgba(245,166,35,.45); background: rgba(245,166,35,.07); border-radius: 8px; font-size: 12px; color: var(--text-2); line-height: 1.8; }
+.bp-hint b { color: #f5a623; }
 .pool-tip { border: 1px dashed var(--border); }
 .pool-text { font-size: 13px; color: var(--text-2); }
 
