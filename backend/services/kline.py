@@ -8,7 +8,7 @@
 """
 
 import statistics
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -32,10 +32,22 @@ def _num(value: Any) -> Optional[float]:
 
 
 class KlineService(object):
-    """个股 K 线 / 分时 / 技术指标服务（带短缓存）。"""
+    """个股 K 线 / 分时 / 技术指标服务（带短缓存）。
 
-    _KLINE_API = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-    _MINUTE_API = "https://web.ifzq.gtimg.cn/appstock/app/minute/query"
+    腾讯接口存在域名级风控（偶发 501 校验页/不可达），因此 K 线与分时均配置
+    多个等价主机逐个尝试：web.ifzq.gtimg.cn -> ifzq.gtimg.cn -> proxy.finance.qq.com。
+    """
+
+    _KLINE_HOSTS = (
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
+        "https://ifzq.gtimg.cn/appstock/app/fqkline/get",
+        "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get",
+    )
+    _MINUTE_HOSTS = (
+        "https://web.ifzq.gtimg.cn/appstock/app/minute/query",
+        "https://ifzq.gtimg.cn/appstock/app/minute/query",
+        "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/minute/query",
+    )
 
     def __init__(self) -> None:
         self._cache = TTLCache(ttl=config.CACHE_TTL)
@@ -49,13 +61,17 @@ class KlineService(object):
             return "bj%s" % code
         return "sz%s" % code
 
-    def _http_get(self, url: str, params: Dict[str, str]) -> dict:
-        try:
-            resp = requests.get(url, params=params, timeout=config.UPSTREAM_TIMEOUT)
-            resp.raise_for_status()
-            return resp.json()
-        except requests.RequestException as exc:
-            raise DataSourceError("行情接口请求失败: %s" % exc)
+    def _http_get(self, urls: Tuple[str, ...], params: Dict[str, str]) -> dict:
+        """依次尝试多个等价主机，全部失败才抛 DataSourceError。"""
+        last_error = None
+        for url in urls:
+            try:
+                resp = requests.get(url, params=params, timeout=config.UPSTREAM_TIMEOUT)
+                resp.raise_for_status()
+                return resp.json()
+            except requests.RequestException as exc:
+                last_error = exc
+        raise DataSourceError("行情接口请求失败: %s" % last_error)
 
     # ------------------------------------------------------------------
     # K 线
@@ -70,7 +86,7 @@ class KlineService(object):
             return cached
 
         tcode = self._tencent_code(code)
-        payload = self._http_get(self._KLINE_API, {"param": "%s,%s,,,%d,qfq" % (tcode, period, count)})
+        payload = self._http_get(self._KLINE_HOSTS, {"param": "%s,%s,,,%d,qfq" % (tcode, period, count)})
         data = ((payload or {}).get("data") or {}).get(tcode) or {}
         rows = data.get("qfq%s" % period) or data.get(period) or []
 
@@ -109,7 +125,7 @@ class KlineService(object):
             return cached
 
         tcode = self._tencent_code(code)
-        payload = self._http_get(self._MINUTE_API, {"code": tcode})
+        payload = self._http_get(self._MINUTE_HOSTS, {"code": tcode})
         node = (payload or {}).get("data") or {}
         node = node.get(tcode) or {}
         data = node.get("data") or {}
