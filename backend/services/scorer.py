@@ -329,6 +329,18 @@ class StockScorer(object):
             advice_lines.append("策略：现价附近轻仓试仓；跌破短线支撑（MA20/近期低点）止损观察。")
         else:
             advice_lines.append("综合打分 %.1f、买点打分 %.1f，当前时刻不具备良好买点，暂不建议追入" % (composite, bs))
+            if composite >= 60:
+                # 综合已达标却不判定可买：说明具体是哪一项条件不满足，避免用户困惑
+                conds = []
+                if bs < 55:
+                    conds.append("买点打分 %.1f 低于门槛 55（现价相对均线乖离偏大，缺少回踩低吸位置）" % bs)
+                if not (ts >= 50 or es >= 60):
+                    conds.append("技术面 %.1f 与短线情绪 %.1f 均未达门槛（需至少一项：技术≥50 或 情绪≥60）" % (ts, es))
+                if conds:
+                    advice_lines.append(
+                        "综合打分已达 %.1f，但%s，按买入规则仍判定暂不宜追入；可等回踩企稳或条件转好后重新打分"
+                        % (composite, "；".join(conds))
+                    )
             if ma20v is not None and price is not None and price < ma20v:
                 # 直接回应「股价已很低，现在买是否更划算」的疑问
                 advice_lines.append(

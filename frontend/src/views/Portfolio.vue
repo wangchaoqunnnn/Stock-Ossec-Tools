@@ -130,12 +130,13 @@ async function evaluate(code) {
   try {
     const data = await fetchStockScore(c)
     result.value = data
-    // 策略：值得跟踪则自动放入观察池
-    if (data && data.worth_track) {
+    // 观察池策略：仅判定“可以买入”的自动放入观察池（不适合买入的不入池）
+    if (data && data.can_buy) {
       addToPool(data)
-      message.success(`${data.name}：值得跟踪，已加入观察池`)
+      message.success(`${data.name}：判定可以买入，已加入观察池`)
     } else if (data) {
-      message.info(`${data.name}：综合/买点得分较低，暂不值得跟踪`)
+      const comp = data.scores && data.scores.composite ? data.scores.composite.score : '?'
+      message.info(`${data.name}：综合 ${comp} 分，但买点/技术/情绪条件未满足，暂不适合买入，未加入观察池`)
     }
   } catch (e) {
     message.error(e.message)
@@ -158,6 +159,22 @@ function scoreColor(s) {
   if (s >= 55) return 'warn'
   if (s >= 40) return 'mid'
   return 'down'
+}
+
+// 结论区说明：解释“综合达标却仍判定不宜买入”的具体原因，避免用户困惑
+function verdictNote(r) {
+  if (!r) return ''
+  if (r.can_buy) return '红色提示：综合/买点/技术条件齐备，当前具备买入条件，可少量分批建仓'
+  const comp = r.scores && r.scores.composite ? r.scores.composite.score : null
+  if (comp !== null && comp < 60) return `绿色提示：综合打分 ${comp} < 60，整体条件不足，暂不宜买入；可参考下方买点/压力位等待机会`
+  const bs = r.scores ? r.scores.buy_point.score : 0
+  const ts = r.scores ? r.scores.technical.score : 0
+  const es = r.scores ? r.scores.sentiment.score : 0
+  const lacks = []
+  if (bs < 55) lacks.push(`买点分 ${bs} < 55（现价乖离偏高，无回踩低吸位）`)
+  if (!(ts >= 50 || es >= 60)) lacks.push(`技术 ${ts} 与情绪 ${es} 均未达门槛`)
+  const why = lacks.length ? lacks.join('；') : '买入条件未满足'
+  return `绿色提示：综合 ${comp} ≥ 60 已达标，但${why}，故暂不宜买入（避免追高）；建议回踩企稳后重新打分`
 }
 
 const scoreMeta = [
@@ -230,7 +247,7 @@ onMounted(loadPool)
           <!-- 结论：可买=红字 / 不可买=绿字 -->
           <div class="verdict" :class="result.can_buy ? 'verdict-buy' : 'verdict-nobuy'">
             <div class="verdict-title">{{ result.can_buy ? '✓ 可以买入' : '✗ 当前不宜买入' }}</div>
-            <div class="verdict-note">{{ result.can_buy ? '红色提示：当前具备买入条件，可少量分批建仓' : '绿色提示：当前买点不佳，请参考下方给出的等待买点价位' }}</div>
+            <div class="verdict-note">{{ verdictNote(result) }}</div>
           </div>
         </div>
 
@@ -345,11 +362,11 @@ onMounted(loadPool)
 
         <!-- 观察池提示 -->
         <div class="pool-tip terminal-card">
-          <template v-if="result.worth_track">
-            <span class="pool-text">策略：综合 {{ result.scores.composite.score }} / 买点 {{ result.scores.buy_point.score }}，值得跟踪{{ inPool(result.code) ? '（已在观察池）' : '，已自动加入观察池' }}</span>
+          <template v-if="result.can_buy">
+            <span class="pool-text">策略：综合 {{ result.scores.composite.score }} / 买点 {{ result.scores.buy_point.score }} 达标，判定可以买入{{ inPool(result.code) ? '（已在观察池）' : '，已自动加入观察池' }}</span>
           </template>
           <template v-else>
-            <span class="pool-text">策略：综合 {{ result.scores.composite.score }} / 买点 {{ result.scores.buy_point.score }}，暂不值得跟踪，未加入观察池</span>
+            <span class="pool-text">策略：综合 {{ result.scores.composite.score }} 分，但买入条件未满足 → 暂不宜买入，未加入观察池（可参考上方买点/压力位等待回踩企稳后再打分）</span>
           </template>
         </div>
       </div>
@@ -383,7 +400,7 @@ onMounted(loadPool)
           </tbody>
         </table>
       </div>
-      <div v-else class="pool-empty">暂无观察股票 —— 输入个股打分后，值得跟踪的会自动加入观察池</div>
+      <div v-else class="pool-empty">暂无观察股票 —— 打分判定“可以买入”的会自动加入观察池；暂不适合买入的不入池</div>
     </div>
 
     <footer class="page-foot">
