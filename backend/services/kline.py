@@ -94,8 +94,15 @@ class KlineService(object):
     # ------------------------------------------------------------------
     # 分时
     # ------------------------------------------------------------------
-    def get_minute(self, code: str) -> List[dict]:
-        """获取当日分时明细。"""
+    def get_minute_session(self, code: str) -> Dict[str, Any]:
+        """获取当日/最近交易日分时明细（含数据日期与累计量额）。
+
+        腾讯 minute/query 每行形如 "0930 12.34 1000 1234567.00"：
+        time / price / 累计成交量(手) / 累计成交额(元)，跨午休也为累计值。
+
+        返回 {"date": "20260904", "rows": [{time, price, volume, amount}, ...]}；
+        分时不可用/暂无数据时 rows 为空、date 为空串。
+        """
         key = "minute:%s" % code
         cached = self._cache.get(key)
         if cached is not None:
@@ -103,25 +110,32 @@ class KlineService(object):
 
         tcode = self._tencent_code(code)
         payload = self._http_get(self._MINUTE_API, {"code": tcode})
-        try:
-            rows = ((payload or {}).get("data") or {}).get(tcode, {}).get("data", {}).get("data") or []
-        except AttributeError:
-            rows = []
+        node = (payload or {}).get("data") or {}
+        node = node.get(tcode) or {}
+        data = node.get("data") or {}
+        rows_raw = data.get("data") or []
+        date = str(data.get("date") or "")
 
         result = []
-        for row in rows:
+        for row in rows_raw:
             parts = str(row).split()
             if len(parts) < 2:
                 continue
-            result.append(
-                {
-                    "time": parts[0],
-                    "price": _num(parts[1]),
-                    "volume": _num(parts[2]) if len(parts) > 2 else None,
-                }
-            )
-        self._cache.set(key, result)
-        return result
+            item = {
+                "time": parts[0],
+                "price": _num(parts[1]),
+                "volume": _num(parts[2]) if len(parts) > 2 else None,  # 累计手
+                "amount": _num(parts[3]) if len(parts) > 3 else None,  # 累计元
+            }
+            if item["price"] is not None:
+                result.append(item)
+        out = {"date": date, "rows": result}
+        self._cache.set(key, out)
+        return out
+
+    def get_minute(self, code: str) -> List[dict]:
+        """获取当日分时明细（仅返回行列表，兼容原有调用）。"""
+        return self.get_minute_session(code).get("rows") or []
 
     # ------------------------------------------------------------------
     # 技术指标

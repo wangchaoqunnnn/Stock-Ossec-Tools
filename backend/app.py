@@ -18,6 +18,7 @@ from services.eastmoney import EastMoneyService
 from services.rankings import RankingsService
 from services.kline import KlineService
 from services.scorer import StockScorer
+from services.intraday import IntradayJudge
 
 try:  # python -m backend.app（项目根目录运行）
     from backend import config
@@ -34,6 +35,7 @@ service = EastMoneyService()
 rankings = RankingsService()
 kline = KlineService()
 scorer = StockScorer()
+intraday = IntradayJudge()
 
 
 def ok(data=None, message="ok"):
@@ -242,6 +244,38 @@ def stock_score():
         return fail("打分服务暂时不可用，请稍后重试", code=503, status=503)
     if data is None:
         return fail("未查询到该股票行情，请检查代码是否正确", code=404, status=404)
+    return ok(data)
+
+
+@app.route("/api/stock/buy-check")
+def stock_buy_check():
+    """分时量价形态判断：能否以当前市价买入 + 建议价位。
+
+    识别冲高诱多 / 无量拉升 / 量价齐升 / 缩量回调等分时特征，
+    给出 market（可市价）/ limit（挂限价等回踩）/ wait（观望）结论。
+    """
+    code = request.args.get("code", "").strip()
+    if not _valid_code(code):
+        return fail("股票代码格式不正确，应为 6 位数字", code=400, status=400)
+    try:
+        data = intraday.judge(code)
+    except Exception:
+        return fail("分时买入分析暂时不可用，请稍后重试", code=503, status=503)
+    if data is None:
+        return fail("未查询到该股票分时行情，请检查代码是否正确", code=404, status=404)
+    # 附带六维打分上下文，便于前端对照（失败不影响分时结论）
+    try:
+        sc = scorer.score(code)
+        if sc:
+            data["score_context"] = {
+                "composite": sc["scores"]["composite"]["score"],
+                "buy_point": sc["scores"]["buy_point"]["score"],
+                "technical": sc["scores"]["technical"]["score"],
+                "sentiment": sc["scores"]["sentiment"]["score"],
+                "can_buy": sc["can_buy"],
+            }
+    except Exception:
+        pass
     return ok(data)
 
 

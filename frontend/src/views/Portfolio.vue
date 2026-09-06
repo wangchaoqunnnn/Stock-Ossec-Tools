@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { searchStocks, fetchStockScore } from '../api'
+import { searchStocks, fetchStockScore, fetchBuyCheck } from '../api'
 import { num, pct, signed, trendClass } from '../utils/format'
 
 const POOL_KEY = 'stock_score_pool_v1'
@@ -16,6 +16,23 @@ const result = ref(null)
 const loading = ref(false)
 let timer = null
 let seq = 0
+
+// 分时买入分析（询问能否以当前市价买入）
+const askLoading = ref(false)
+const askResult = ref(null)
+
+async function askBuyCheck() {
+  const r = result.value
+  if (!r || !r.code) return
+  askLoading.value = true
+  try {
+    askResult.value = await fetchBuyCheck(r.code)
+  } catch (e) {
+    message.error(e.message)
+  } finally {
+    askLoading.value = false
+  }
+}
 
 // 观察池
 const pool = ref([])
@@ -109,6 +126,7 @@ async function evaluate(code) {
   }
   loading.value = true
   result.value = null
+  askResult.value = null
   try {
     const data = await fetchStockScore(c)
     result.value = data
@@ -270,6 +288,57 @@ onMounted(loadPool)
           </div>
         </div>
 
+        <!-- 询问：能否以当前市价买入 -->
+        <div class="ask-card terminal-card">
+          <div class="ask-head">
+            <div class="panel-title">❓ 询问：现在能以当前市价买入吗？</div>
+            <a-button
+              type="primary"
+              ghost
+              size="small"
+              :loading="askLoading"
+              @click="askBuyCheck"
+            >{{ askResult ? '重新分析' : '分时量价分析' }}</a-button>
+          </div>
+          <div class="ask-tip" v-if="!askResult && !askLoading">点击按钮，结合当日分时形态（冲高诱多 / 无量拉升 / 量价齐升 / 缩量回调等）判断：是否适合直接以市价单买入？如不适合建议以什么价位买入。</div>
+
+          <div v-if="askResult" class="ask-result">
+            <div class="ask-note">{{ askResult.trade_note }}</div>
+            <div class="ask-verdict" :class="askResult.verdict.action === 'market' ? 'ask-allow' : 'ask-deny'">
+              <span class="ask-v-title">{{ askResult.verdict.title }}</span>
+              <span v-if="askResult.score_context" class="ask-v-ctx">六维综合 {{ askResult.score_context.composite }} · 买点 {{ askResult.score_context.buy_point }}</span>
+            </div>
+
+            <!-- 识别出的分时形态 -->
+            <div v-if="askResult.patterns && askResult.patterns.length" class="ask-patterns">
+              <div v-for="(p, i) in askResult.patterns" :key="i" class="ask-chip" :class="'tone-' + p.tone">
+                <span class="ask-chip-name">{{ p.name }}</span>
+                <span class="ask-chip-desc">{{ p.desc }}</span>
+              </div>
+            </div>
+
+            <!-- 建议价位 -->
+            <div v-if="askResult.suggestion && askResult.suggestion.price != null" class="ask-suggest">
+              <span class="ask-s-label">{{ askResult.suggestion.kind === 'market' ? '参考买入价' : askResult.suggestion.kind === 'limit' ? '建议挂单价' : '企稳参考价' }}</span>
+              <span class="ask-s-price num">{{ num(askResult.suggestion.price, 2) }}</span>
+              <span class="ask-s-note">{{ askResult.suggestion.note }}</span>
+            </div>
+
+            <!-- 关键价位 -->
+            <div v-if="askResult.levels" class="ask-levels">
+              现价 <b class="num">{{ num(askResult.levels.price, 2) }}</b>
+              · 分时均价 <b class="num">{{ num(askResult.levels.vwap, 2) }}</b>
+              · 日内高 <b class="num">{{ num(askResult.levels.day_high, 2) }}</b>
+              · 日内低 <b class="num">{{ num(askResult.levels.day_low, 2) }}</b>
+              <template v-if="askResult.levels.ma20">· MA20 <b class="num">{{ num(askResult.levels.ma20, 2) }}</b></template>
+            </div>
+
+            <ul class="ask-reasons">
+              <li v-for="(x, i) in askResult.reasons" :key="i">{{ x }}</li>
+            </ul>
+          </div>
+        </div>
+
         <!-- 观察池提示 -->
         <div class="pool-tip terminal-card">
           <template v-if="result.worth_track">
@@ -398,6 +467,34 @@ onMounted(loadPool)
 .bp-note { font-size: 12px; color: var(--text-2); flex: 1; min-width: 180px; }
 .pool-tip { border: 1px dashed var(--border); }
 .pool-text { font-size: 13px; color: var(--text-2); }
+
+/* 分时买入分析卡片 */
+.ask-card { padding: 14px 18px; border: 1px solid rgba(79,124,255,.25); }
+.ask-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ask-head .panel-title { margin-bottom: 0; }
+.ask-tip { font-size: 12px; color: var(--text-3); line-height: 1.7; padding: 4px 0; }
+.ask-result { display: flex; flex-direction: column; gap: 10px; }
+.ask-note { font-size: 12px; color: var(--text-3); padding: 6px 10px; background: var(--panel-2); border-radius: 6px; }
+.ask-verdict { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 8px; }
+.ask-allow { color: #ff4d5e; background: rgba(255,77,94,.1); border: 1px solid rgba(255,77,94,.4); }
+.ask-deny { color: #00c58e; background: rgba(0,197,142,.1); border: 1px solid rgba(0,197,142,.4); }
+.ask-v-title { font-size: 16px; font-weight: 800; }
+.ask-v-ctx { font-size: 12px; opacity: .85; margin-left: auto; }
+.ask-patterns { display: flex; flex-direction: column; gap: 6px; }
+.ask-chip { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-radius: 6px; background: var(--panel-2); border-left: 3px solid #6f6f8a; flex-wrap: wrap; }
+.ask-chip.tone-good { border-left-color: var(--accent); }
+.ask-chip.tone-risk { border-left-color: #f5a623; }
+.ask-chip.tone-neutral { border-left-color: #6f6f8a; }
+.ask-chip-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.ask-chip-desc { font-size: 12px; color: var(--text-2); line-height: 1.6; }
+.ask-suggest { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; background: rgba(79,124,255,.08); border-radius: 8px; flex-wrap: wrap; }
+.ask-s-label { font-size: 12px; color: var(--text-2); }
+.ask-s-price { font-size: 22px; font-weight: 800; color: var(--accent); }
+.ask-s-note { font-size: 12px; color: var(--text-2); line-height: 1.6; flex: 1; min-width: 200px; }
+.ask-levels { font-size: 12px; color: var(--text-3); line-height: 1.8; }
+.ask-levels b { color: var(--text-2); font-weight: 600; }
+.ask-reasons { margin: 0; padding: 0 0 0 18px; font-size: 12px; color: var(--text-2); line-height: 1.8; }
+.ask-reasons li { margin-bottom: 2px; }
 
 .pool-card { overflow: hidden; }
 .pool-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
